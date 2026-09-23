@@ -1,37 +1,5 @@
 """
-Inventory System
-================
-
-Implements inventory management for characters and the player.
-
-Responsibilities
-----------------
-
-• Item storage
-• Item stacking
-• Adding and removing items
-• Currency management
-• Inventory queries
-• Equipment-aware item counting
-
-Architecture
-------------
-
-The inventory stores lightweight inventory entries rather than
-duplicating item definitions. Gameplay systems reference the
-shared item registry defined in items.rpy, allowing item data
-to remain centralized while inventories only track ownership
-and quantities.
-
-Collaborates with
------------------
-
-• Item Registry
-• Equipment System
-• Shops
-• Crafting
-• Quests
-• Character System
+Inventory storage, item counts and currency helpers.
 """
 
 init python:
@@ -41,148 +9,120 @@ init python:
             self.maxSize = maxSize
             self.money = 0
 
-            self.itemIndex = -1 #last searched items index, if not in inventory then -1
+        def _resolve_item(self, item):
+            if isinstance(item, Item):
+                return item
+            return get_item_by_id(item)
 
-        # Returns the index of an item within the inventory, or -1 if the item is not present.
         def find_item_index(self, item):
-            for i, inv in enumerate(self.inventory):
-                if inv.itemID == item.itemID:
-                    return i
+            for index, inv_item in enumerate(self.inventory):
+                if inv_item.itemID == item.itemID:
+                    return index
             return -1
-        
-        #Adds Item to Inventory
+
         def add_item(self, item, amount = 1, popup = False):
-            if not isinstance(item, Item):
-                item = get_item_by_id(item)
-            if item.name == "None":
-                return
+            item = self._resolve_item(item)
+            if item is None or item.name == "None":
+                return False
+
             if popup:
                 add_popup_item(item.itemID, amount)
 
-            self.itemIndex = self.find_item_index(item)
-            if self.itemIndex >= 0:
-                renpy.log(f"Found ItemInstance already in Inventory, adding more {item.itemID}")
-                self.inventory[self.itemIndex].amount += amount
+            item_index = self.find_item_index(item)
+            if item_index >= 0:
+                self.inventory[item_index].amount += amount
             else:
                 self.inventory.append(InvItem(item.itemID, amount))
-                renpy.log(f"didn't find ItemInstance in Inventory, adding instance {item.itemID}")
-            return
 
-        #Returns amount of item in inventory 
+            return True
+
         def get_item_amount(self, item):
-            if not isinstance(item, Item):
-                item = get_item_by_id(item)
-            if item.name == "None":
+            item = self._resolve_item(item)
+            if item is None or item.name == "None":
                 return 0
-            self.itemIndex = self.find_item_index(item)
-            if self.itemIndex == -1:
-                return 0
-            else: 
-                return self.inventory[self.itemIndex].amount
 
-        #Returns amount of item in inventory + equipped items taken into account as well! ONLY USE THIS ON MAIN PLAYER INVENTORY!!!!
+            item_index = self.find_item_index(item)
+            if item_index == -1:
+                return 0
+            return self.inventory[item_index].amount
+
+        # Includes copies currently equipped by the main party.
         def get_item_amount_full(self, item):
-            if not isinstance(item, Item):
-                item = get_item_by_id(item)
-            if item.name == "None":
+            item = self._resolve_item(item)
+            if item is None or item.name == "None":
                 return 0
-            self.itemIndex = self.find_item_index(item)
-            result = 0
-            if self.itemIndex == -1:
-                pass
-            else: 
-                result += self.inventory[self.itemIndex].amount
 
+            result = self.get_item_amount(item)
             for cid in MAINCHARS:
-                char = gc(cid)
-                result += char.has_equipped_amount(item)
+                result += gc(cid).has_equipped_amount(item)
 
             return result
 
-        #Checks if the specified amount of items are available in inventory
-        def check_item_amount(self, item, amount=1):
-            if not isinstance(item, Item):
-                item = get_item_by_id(item)
-            if item.name == "None":
-                return 0
-            self.itemIndex = self.find_item_index(item)
-            if self.itemIndex != -1:
-                if self.inventory[self.itemIndex].amount >= amount:
-                    return True
-                else:
-                    return False
-            else:
+        def check_item_amount(self, item, amount = 1):
+            return self.get_item_amount(item) >= amount
+
+        def remove_item(self, item, amount = 1):
+            item = self._resolve_item(item)
+            if item is None or item.name == "None":
                 return False
 
-        #removes item from inventory if possible, returns true if successful
-        def remove_item(self, item, amount = 1):
-            if not isinstance(item, Item):
-                item = get_item_by_id(item)
-            if item.name == "None":
-                return 0
-            if self.check_item_amount(item, amount):
-                if self.inventory[self.itemIndex].amount == amount:
-                    self.inventory.pop(self.itemIndex)
-                    renpy.log(f"removing itemInstance completely {amount} from Inventory {item.itemID}")
-                    return True
-                else:
-                    self.inventory[self.itemIndex].amount -= amount
-                    renpy.log(f"removing itemInstance x {amount} from Inventory {item.itemID}")
-                    return True
-            else:
+            item_index = self.find_item_index(item)
+            if item_index == -1 or self.inventory[item_index].amount < amount:
                 return False
+
+            if self.inventory[item_index].amount == amount:
+                self.inventory.pop(item_index)
+            else:
+                self.inventory[item_index].amount -= amount
+
+            return True
 
         def get_filtered_items(self, key = -1):
             self.sort_inventory()
-            itemList = []
-            for invItem in self.inventory:
-                if get_item_by_id(invItem.itemID).category == key or key == ALL:
-                    itemList.append(invItem)
-            return itemList
+            return [
+                inv_item
+                for inv_item in self.inventory
+                if key == ALL or get_item_by_id(inv_item.itemID).category == key
+            ]
 
         def add_money(self, amount, popup = False, sound = True):
             self.money += amount
             if sound:
                 play_sfx("coin_money_1", channel = 9)
             if popup:
-                renpy.log("inventory - adding popup?")
                 add_popup_money(amount)
-            return
-        
+
         def remove_money(self, amount):
-            if (self.money >= amount):
-                self.money -= amount
-                return True
-            else:
+            if self.money < amount:
                 return False
+            self.money -= amount
+            return True
 
         def check_money(self, amount):
-            if (self.money >= amount):
-                return True
-            else:
-                return False
+            return self.money >= amount
 
         def get_gold(self):
             return self.money // 10000
+
         def get_silver(self):
             return self.money // 100 % 100
+
         def get_copper(self):
             return self.money % 100
 
         def merge_inventory(self, inventory):
-            for invItem in inventory.inventory:
-                self.add_item(get_item_by_id(invItem.itemID), invItem.amount)
+            for inv_item in inventory.inventory:
+                self.add_item(inv_item.itemID, inv_item.amount)
             self.add_money(inventory.money)
 
         def sort_inventory(self):
-            self.inventory.sort(key = lambda invItem: get_item_by_id(invItem.itemID).sortID)
+            self.inventory.sort(key = lambda inv_item: get_item_by_id(inv_item.itemID).sortID)
 
-        def print(self):
-            renpy.log("Printing Inventory: ")
-            for invItem in self.inventory:
-                renpy.log(f"{invItem.itemID}: {invItem.amount}")
+        def log_contents(self):
+            for inv_item in self.inventory:
+                renpy.log(f"{inv_item.itemID}: {inv_item.amount}")
 
-    #Item Instance - Instance of items in an Inventory
+
     class InvItem(object):
         def __init__(self, itemID, amount):
             self.itemID = itemID

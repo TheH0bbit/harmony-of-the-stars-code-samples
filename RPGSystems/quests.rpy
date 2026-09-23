@@ -1,53 +1,13 @@
 """
-Quest System
-============
+Quest progression and requirement handling for Harmony of the Stars.
 
-Implements the quest management framework used throughout
-Harmony of the Stars.
-
-Responsibilities
-----------------
-
-• Quest lifecycle management
-• Stage progression
-• Completion tracking
-• Requirement validation
-• Quest metadata access
-• Integration with rewards and notifications
-
-Architecture
-------------
-
-Quest definitions are stored separately from quest state.
-
-Static quest information (titles, stages, rewards, descriptions,
-etc.) is defined in QUEST_DEFS, while this module is responsible
-for tracking each player's current progression.
-
-Requirements are evaluated dynamically through other gameplay
-systems such as inventory, character progression and global flags.
-
-Collaborates with
------------------
-
-• Inventory
-• Flag System
-• Characters
-• UI / Notifications
-• Rewards
-
-#Set containing all quest related flags
-default quest_states = {}
-default quests = QuestManager()
-
+Quest definitions are static data, while quest_states stores the mutable
+progress used by saves. Reward, inventory, character and flag systems are
+defined elsewhere in the project.
 """
 
 init python:
     class QuestManager:
-        def __init__(self):
-            pass
-
-        # Initializes a quest and creates its runtime state.
         def start(self, qid):
             if qid not in QUEST_DEFS:
                 return
@@ -70,38 +30,40 @@ init python:
         def get_completed_quests(self):
             return [(qid, state) for qid, state in quest_states.items() if state.get("completed")]
 
+        def _get_value(self, qid, key, default=None):
+            return QUEST_DEFS.get(qid, {}).get(key, default)
+
         def get_title(self, qid):
-            renpy.log(f"qid: {qid}")
-            return QUEST_DEFS.get(qid).get("title")
+            return self._get_value(qid, "title")
 
         def get_name(self, qid):
-            return QUEST_DEFS.get(qid).get("name")
+            return self._get_value(qid, "name")
 
         def get_type(self, qid):
-            return QUEST_DEFS.get(qid).get("type")
+            return self._get_value(qid, "type")
 
         def get_type_string(self, qid):
-            return QUESTTYPES[QUEST_DEFS.get(qid).get("type")]
+            quest_type = self.get_type(qid)
+            return QUESTTYPES.get(quest_type)
 
         def get_bg(self, qid):
-            return QUEST_DEFS.get(qid).get("bg")
+            return self._get_value(qid, "bg")
 
         def get_bgslide(self, qid):
-            return QUEST_DEFS.get(qid).get("bgslide")
+            return self._get_value(qid, "bgslide")
 
         def get_icon(self, qid):
-            return QUEST_DEFS.get(qid).get("icon")
+            return self._get_value(qid, "icon")
 
         def get_char(self, qid):
-            return QUEST_DEFS.get(qid).get("char")
+            return self._get_value(qid, "char")
 
         def get_description(self, qid):
-            return QUEST_DEFS.get(qid).get("description")
+            return self._get_value(qid, "description")
 
         def get_hint(self, qid):
-            if self.get_stage_data(qid) and self.get_stage_data(qid).get("tip"):
-                return self.get_stage_data(qid).get("tip")
-            return None
+            stage_data = self.get_stage_data(qid)
+            return stage_data.get("tip") if stage_data else None
 
         def get_stage(self, qid):
             state = quest_states.get(qid)
@@ -112,7 +74,7 @@ init python:
         def get_stage_data(self, qid):
             stage = self.get_stage(qid)
             state = quest_states.get(qid)
-            if stage is None:
+            if stage is None or not state:
                 return None
             if state["completed"]:
                 return None
@@ -202,7 +164,7 @@ init python:
                     self.advance(qid)
 
 
-    #Static quest data, build to dynamic quest containers... need to adapt to update changes from changes to static data again
+    # Static quest definitions. Runtime progress is kept in quest_states.
     QUEST_DEFS = {
         "main1": {
             "title": "Main Quest 1",
@@ -223,7 +185,7 @@ init python:
                             {
                                 "category": STORY,
                                 "identifier": "",
-                                "flag": "visited_mcroom" #main1_1
+                                "flag": "visited_mcroom"
                             },
                         ),
                     },
@@ -237,7 +199,7 @@ init python:
                             {
                                 "category": STORY,
                                 "identifier": "",
-                                "flag": "visited_novaroom" #main1_2
+                                "flag": "visited_novaroom"
                             },
                         ),
                     },
@@ -264,7 +226,7 @@ init python:
                 },
             ],
         },
-        #First adventure
+        # First adventure
         "main2": {
             "title": "Main Quest 2",
             "name": "Your first adventure",
@@ -328,7 +290,7 @@ init python:
                 },
             ],
         },
-        #Ceecee Meet
+        # Ceecee introduction
         "main3": {
             "title": "Main Quest 3",
             "name": "A Sticky Situation",
@@ -348,7 +310,7 @@ init python:
                             {
                                 "category": CHAR,
                                 "identifier": "ceecee",
-                                "flag": "ceecee_meet_2" #given by event
+                                "flag": "ceecee_meet_2"
                             },
                         ),
                     },
@@ -362,7 +324,7 @@ init python:
                             {
                                 "category": CHAR,
                                 "identifier": "ceecee",
-                                "flag": "ceecee_meet_3_pre1" #given by talk yuki, enables ceecee_meet_3 event
+                                "flag": "ceecee_meet_3_pre1"
                             },
                         ),
                     },
@@ -376,7 +338,7 @@ init python:
                             {
                                 "category": CHAR,
                                 "identifier": "ceecee",
-                                "flag": "ceecee_meet_3" #given by event, enables talk with Yuki
+                                "flag": "ceecee_meet_3"
                             },
                         ),
                     },
@@ -391,7 +353,7 @@ init python:
                             {
                                 "category": CHAR,
                                 "identifier": "ceecee",
-                                "flag": "ceecee_meet_4_pre1" #given by talk yuki, enables ceecee_meet_4
+                                "flag": "ceecee_meet_4_pre1"
                             },
                         ),
                     },
@@ -405,7 +367,7 @@ init python:
                             {
                                 "category": CHAR,
                                 "identifier": "ceecee",
-                                "flag": "ceecee_meet_4" #given by event
+                                "flag": "ceecee_meet_4"
                             },
                         ),
                     },
@@ -418,7 +380,7 @@ init python:
                 },
             ],
         },
-        #Solaria Meet
+        # Solaria introduction
         "main4": {
             "title": "Main Quest 4",
             "name": "Shadow on the Walls",
@@ -438,7 +400,7 @@ init python:
                             {
                                 "category": CHAR,
                                 "identifier": "solaria",
-                                "flag": "solaria_meet_2" #given by event, enables talk
+                                "flag": "solaria_meet_2"
                             },
                         ),
                     },
@@ -452,7 +414,7 @@ init python:
                             {
                                 "category": CHAR,
                                 "identifier": "solaria",
-                                "flag": "solaria_meet_3_pre1" #given by talk nova, enables solaria_meet_3 event
+                                "flag": "solaria_meet_3_pre1"
                             },
                         ),
                     },
@@ -466,7 +428,7 @@ init python:
                             {
                                 "category": CHAR,
                                 "identifier": "solaria",
-                                "flag": "solaria_meet_3" #given by event, enables meet_4
+                                "flag": "solaria_meet_3"
                             },
                         ),
                     },
@@ -480,7 +442,7 @@ init python:
                             {
                                 "category": CHAR,
                                 "identifier": "solaria",
-                                "flag": "solaria_meet_4" #given by event
+                                "flag": "solaria_meet_4"
                             },
                         ),
                     },
@@ -493,7 +455,7 @@ init python:
                 },
             ],
         },
-        #First Super quest(Super Quests are the ones that gatekeep the next story part, requirements are often mainquest flags)
+        # Story gate quest used before the next main section.
         "super1": {
             "title": "Chapter 1.1",
             "name": "~ Welcome to Solstice Ridge ~",
@@ -528,7 +490,7 @@ init python:
                                 "flag": "main4_done",
                             },
                         ),
-                        "levels": ( #levelrequirements that show and check required character Progress
+                        "levels": (
                             {
                                 "char": "zero",
                                 "level": 7,
@@ -571,7 +533,7 @@ init python:
             "stages": [
                 {
                     "description": "Not much left to do now but wait for the next update!\nIf you want to talk about the game, give me feedback or just want to say hello, why don't you join the official Harmony of the Stars Discord server!\nA link can be found on the main menu.",
-                    "tip": "If you want to ensure the future of Harmony of the Stars, then please consider supporting its development on Patreon or Subscribestar! #shameless plug, lol",
+                    "tip": "You have reached the end of the currently available main quest content.",
                     "requirements": {
                         "flags": (
                             {
@@ -601,58 +563,3 @@ label reached_current_end:
         $ quests.start("info1")
         $ flags.story.set("", "info_quest_active")
     return
-
-####################################### FULL ENTRY FOR OVERVIEW/COPY-PASTING! ####################################################
-#        "main2": {
-#            "title": "Main Quest 2",
-#            "name": "Prepare for your first adventure!",
-#            "type": MAINQUEST,
-#            "bg": False,
-#            "bgslide": True,
-#            "icon": False,
-#            "char": None,
-#            "description": "You are about to embark on your first adventure together! Though you should probably prepare for it first.",
-#            "stages": [
-#                {
-#                    "description": "Talk to Nova",
-#                    "tip": "You can find her in her room.",
-#                    "requirements": {
-#                        "money": 100,
-#                        "items": (("royalsword", 2), ("ironsword", 2)),
-#                        "text": "Optional requirements text, if wanted.",
-#                        "flags": (
-#                            {
-#                                "type": CHAR,
-#                                "char": "nova",
-#                                "flag": "exampleflag1"
-#                            },
-#                            {
-#                                "type": LOC,
-#                                "super": "home",
-#                                "loc": "shrine",
-#                                "flag": "exampleflag2"
-#                            },
-#                        ),
-#                    },
-#                    "reward": { #Note: each of these fields should be allowed to be empty
-#                        "money": 100,
-#                        "items": (("royalsword", 2), ("ironsword", 1)),
-#                        "text": "Optional reward text, if wanted.",
-#                        "flags": (
-#                            {
-#                                "type": "char",
-#                                "char": "nova",
-#                                "flag": "exampleflag1"
-#                            },
-#                            {
-#                                "type": "loc",
-#                                "super": "home",
-#                                "loc": "shrine",
-#                                "flag": "exampleflag2"
-#                            },
-#                        ),
-#                        "target": "where to tell renpy to jump upon completion",
-#                    },
-#                },
-#            ],
-#        },

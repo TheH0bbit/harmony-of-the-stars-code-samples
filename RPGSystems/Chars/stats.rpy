@@ -1,14 +1,5 @@
 """
-Character Stats
-====================
-
-Defines the Stats data model used throughout the project.
-
-The class represents the collection of numerical attributes that
-describe a character's combat capabilities. Statistics can be
-combined, modified and queried by gameplay systems such as combat,
-equipment, skills and progression.
-
+Shared stat and affinity containers used by RPG systems.
 """
 
 init python:
@@ -84,7 +75,6 @@ init python:
             self.luck = 0
         
         def print(self):
-            #renpy.log(f"printing Stats - HP:{self.hp:.2f}, MP:{self.mp:.2f}, SPD:{self.speed:.2f}, STR:{self.strength:.2f}, MAG:{self.magicPow:.2f}, DEX:{self.dexterity:.2f}, CON:{self.constitution:.2f}, RES:{self.resistance:.2f}")
             return f"printing Stats - HP:{self.hp:.2f}, MP:{self.mp:.2f}, STA:{self.stamina:.2f}, STR:{self.strength:.2f}, MAG:{self.magicPow:.2f}, CON:{self.constitution:.2f}, RES:{self.resistance:.2f}, SPD:{self.speed:.2f}, DEX:{self.dexterity:.2f}, LUCK:{self.luck:.2f}"
 
         def get_power(self, attType):

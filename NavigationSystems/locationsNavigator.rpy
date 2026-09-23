@@ -1,44 +1,12 @@
 """
-Navigation System
-=================
-
-Controls movement between explorable locations.
-
-Responsibilities
-----------------
-
-• Current location management
-• Location transitions
-• Navigation flow
-• Triggering location events
-• Quest update integration
-• Scene loading
-
-Architecture
-------------
-
-The navigation system acts as the central entry point whenever the
-player moves to a new location.
-
-After updating the current navigation state, it coordinates
-location-specific events, quest updates, dialogue triggers and
-screen transitions before handing control back to the player.
-
-Collaborates with
------------------
-
-• World Map
-• Quests
-• Character Locations
-• Location Events
-• UI
+Navigation flow between explorable locations.
 """
 
-default navLocation = "giraffeexhibit"
-default superLocation = "thefckingzoo"
-default prevNavLocation = "thesavannahorhoweveryouwritethat"
-default new_location = f"{superLocation}_{navLocation}" 
-default last_location = f"{superLocation}_{navLocation}" #Only last location compared to new_location while hasn't been updated, can be used inbetween their two respective update events
+default navLocation = "hub"
+default superLocation = "home"
+default prevNavLocation = "hub"
+default new_location = f"{superLocation}_{navLocation}"
+default last_location = f"{superLocation}_{navLocation}" # Updated after location checks complete.
 
 
 init python:
@@ -112,22 +80,7 @@ screen navi(navLocation = "s_home_hub"):
     modal True
     tag nav
 
-    on "show" action [  Function(renpy.choice_for_skipping),
-                        #SetVariable("talkingstring",None),
-                        #SetVariable("talkingGirl",None),
-                        #SetVariable("_skipping",False),
-                        #Function(Girls.softUpdateAll), #TODO
-                        #Function(player.updateEvents)
-                        ]
+    on "show" action Function(renpy.choice_for_skipping)
     on "hide" action [SetVariable("_skipping",True)]
 
-    use expression navLocation #pass (hints)
-
-
-
-#label update_location:
-#    $ location_img = currLocation.lower()
-#    if renpy.has_image(location_img, exact = True):
-#        scene expression location_img
-#    return
-
+    use expression navLocation

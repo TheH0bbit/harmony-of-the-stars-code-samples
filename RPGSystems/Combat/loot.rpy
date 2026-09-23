@@ -1,12 +1,5 @@
 """
-Loot Definitions
-================
-
-Defines loot table structures and helper functions used to
-generate combat rewards.
-
-Loot tables specify experience, currency and potential item
-drops awarded after combat encounters.
+Loot table definitions and combat reward helpers.
 """
 
 init python:
@@ -24,7 +17,7 @@ init python:
             self.lootID = lootID
             self.exp = exp
             self.money = money
-            self.loottable = loottable #list of tuples: (itemID, chance(1(lowest)-100(highest)), rolls)
+            self.loottable = loottable # (itemID, chance, rolls)
             register_loot(self)
 
         def roll_loot(self):
@@ -45,7 +38,7 @@ init python:
             return round(self.money * (1.0 - renpy.random.randint(0, 80)/100))
 
 
-    ############################################ LOOTTABLES ##################################################
+    # Loot tables
 
     goblinLoot = Loot("goblin", 40, 5, (("silverring1", 10, 1),))
     goblinArcherLoot = Loot("goblin_archer", 50, 5, (("silverring1", 10, 1),))

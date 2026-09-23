@@ -1,19 +1,5 @@
 """
-Global Flag System
-==================
-
-Provides a unified interface for storing and querying progression flags
-throughout the game.
-
-The flag system separates flags into several categories depending on
-their scope:
-
-By exposing a single FlagManager interface, gameplay systems can query
-or modify progression state without needing to know how the underlying
-flags are stored.
-
-This module is used extensively by quests, dialogue, events, world
-navigation and progression systems.
+Progression flag storage and lookup helpers.
 """
 
 default flags = FlagManager()
@@ -23,7 +9,6 @@ init python:
     def evaluate_flag(flag_construct):
         return flags.has_flag(flag_construct["category"], flag_construct["identifier"], flag_construct["flag"])
 
-    #Flags Manager
     class CharFlags:
         def __init__(self):
             self.flags = {}
@@ -89,7 +74,7 @@ init python:
                 return True
             return bool(self.get(identifier).intersection(flags))
 
-    #identifier here is only for same function signature, does nothing
+    # identifier is accepted to keep the same interface as scoped flag stores.
     class SimpleFlags:
         def __init__(self):
             self.flags = set()
@@ -116,16 +101,15 @@ init python:
                 return True
             return bool(self.flags.intersection(flags))
 
-    # Facade providing a unified interface to all flag categories.
-    # Gameplay systems should interact with flags exclusively through this manager rather than accessing individual flag collections.
+    # Unified access to each flag category.
     
     class FlagManager:
         def __init__(self):
-            self.char = CharFlags() #identifier is charid
-            self.loc = EntityFlags() #identifier is superlocation_location or for entire superlocations, can just be superlocation
-            self.map = EntityFlags() #identifier is mapid, e.g.: "solsticeridge"
-            self.dungeons = EntityFlags() #identifier is dungeonid, e.g.: "moonlitwoods"
-            self.story = SimpleFlags() #No identifier, just a normal flag object hidden behind the unified facade
+            self.char = CharFlags()
+            self.loc = EntityFlags()
+            self.map = EntityFlags()
+            self.dungeons = EntityFlags()
+            self.story = SimpleFlags()
 
         def apply_flags(self, newFlags):
             for _flag in newFlags:
@@ -143,7 +127,7 @@ init python:
             elif identifier == DUNGEON:
                 return self.dungeons
         
-        #alternate access functions that handle types
+        # Generic access helpers used by systems that receive a category at runtime.
         def get_flags(self, category, identifier):
             return self.get(category).get(identifier)
 

@@ -1,615 +1,394 @@
 """
-World Map System
-================
-
-Implements the interactive world map used for navigation and exploration.
-
-Responsibilities
-----------------
-
-• World map state
-• Camera movement and zoom
-• Dragging and panning
-• Map mode switching
-• Region and town selection
-• Navigation state
-• World map UI interaction
-
-Architecture
-------------
-
-The world map maintains its own runtime state independent of the
-navigation system. It is responsible for presenting the game world,
-while actual location transitions are handled by the navigation
-framework.
-
-The map supports multiple presentation modes (RPG, lore, regional,
-etc.) while sharing a common camera and interaction model.
-
-Collaborates with
------------------
-
-• Navigation
-• Location Information
-• Character Locations
-• Quests
-• UI
+Interactive world map handling for navigation, lore overlays and dungeon selection.
 """
 
 init python:
+    class WorldMapController:
+        MAP_WIDTH = 7680
+        MAP_HEIGHT = 4320
 
-    #TODO: Way too many Global variables, Refactor to Class in near future!
+        def __init__(self):
+            self.mode = RPG
 
-    # Map state - General
-    currentMapMode = RPG
+            self.zoom = 1.0
+            self.zoom_goal = 1.0
+            self.icon_zoom = 1.0
+            self.zoom_min = 0.25
+            self.zoom_max = 2.0
 
-    worldmapZoomGoal = 1.0
-    worldmapZoom = 1.0
-    worldmapZoomIcons = 1.0
-    worldmapZoomMin = 0.25
-    worldmapZoomMax = 2
+            self.zoom_anchor_map = (0.0, 0.0)
+            self.zoom_anchor_screen = (0.0, 0.0)
 
-    zoomAnchorMapX = 0.0
-    zoomAnchorMapY = 0.0
-    zoomAnchorScreenX = 0
-    zoomAnchorScreenY = 0
+            # Map position is stored in normalized screen space.
+            self.x = 0.0
+            self.y = 0.0
+            self.target_x = 0.0
+            self.target_y = 0.0
 
-    #These coordinates are where the top left of the map is placed on the screen!
-    #In Screenspace!
-    worldmapX = 0
-    worldmapY = 0
+            self.dragging = False
+            self.gliding = False
+            self.drag_start_mouse = (0, 0)
+            self.drag_start_map = (0.0, 0.0)
+            self.initial_zoom_difference = 0.0
+            self.initial_coordinates = (0.0, 0.0)
 
-    #In Worldspace!
-    worldmapXGoal = 0
-    worldmapYGoal = 0
+            self.show_countries = False
+            self.show_paths = False
+            self.show_regions = False
+            self.show_towns = True
 
-    mapDragging = False
-    mapGliding = False
-    initialZoomDifferential = 0.0
-    initialCoordinatesX = 0
-    initialCoordinatesY = 0 
-    dragStartMouse = (0, 0)
-    dragStartMap = (0, 0)
+            self.info_showing = True
+            self.mode_state_backup = None
+            self.info_state_backup = None
 
-    WORLDMAP_X = 7680
-    WORLDMAP_Y = 4320
+            self.current_town = "solsticeridge"
+            self.current_area = "easternveraxia"
+            self.selected_dungeon = None
+            self.selected_subarea = None
+            self.hovered_subarea = None
 
-    #WORLDMAP_X = 15360
-    #WORLDMAP_Y = 8640
-    #when switching, change lerp formula for dynamic zoom
+            self.map_center = None
+            self.wiggle_left = 0
+            self.wiggle_right = 0
+            self.wiggle_up = 0
+            self.wiggle_down = 0
 
-    # Map state - Lore
-    worldmapCountries = False
-    worldmapPaths = False
-    worldmapRegions = False
-    worldmapTowns = True
+            self.cloud_positions = {}
+            self.cloud_anchors = {}
+            self.cloud_velocity = {}
+            self.cloud_velocity_target = {}
+            self.cloud_timers = {}
+            self.cloud_override_timer = 0.0
 
-    wmInfoShowing = True
-    wmStateBackup = None
+        @staticmethod
+        def clamp(value, minimum, maximum):
+            return max(minimum, min(value, maximum))
 
+        def clamp_map(self):
+            scaled_width = (self.MAP_WIDTH / SCREEN_W) * self.zoom
+            scaled_height = (self.MAP_HEIGHT / SCREEN_H) * self.zoom
 
-    # Map state - RPG
-    currentTown = "solsticeridge"
-    currentArea = "easternveraxia"
-    selectedDungeon = None
-    selectedSubarea = None
-    hoveredSubarea = None
+            min_x = 1 - scaled_width
+            min_y = 1 - scaled_height
 
-    worldmapCenter = None
-    wiggleLeft = 0
-    wiggleRight = 0
-    wiggleUp = 0
-    wiggleDown = 0
+            if self.mode == RPG and not self.gliding and self.map_center:
+                map_x, map_y = self.screen_to_map(0.5, 0.5)
+                center_x, center_y = self.map_center
 
-    clouds_positions = {}
-    clouds_anchors = {}
-    clouds_velocity = {}
-    clouds_velocity_target = {}
-    clouds_timers = {}
-    override_timer = 0
+                map_x = self.clamp(
+                    map_x,
+                    (center_x - self.wiggle_left) / SCREEN_W,
+                    (center_x + self.wiggle_right) / SCREEN_W,
+                )
+                map_y = self.clamp(
+                    map_y,
+                    (center_y - self.wiggle_up) / SCREEN_H,
+                    (center_y + self.wiggle_down) / SCREEN_H,
+                )
 
+                self.x = 0.5 - map_x * self.zoom
+                self.y = 0.5 - map_y * self.zoom
 
-# OLD Implementation
-#    def worldmap_update_alpha():
-#        global wmPathsAlpha, wmCountriesAlpha, wmRegionsAlpha, wmTownsAlpha
-#        if worldmapPaths:
-#            if wmPathsAlpha != 1.0:
-#                wmPathsAlpha = time_lerp(wmPathsAlpha, 1.0, 5)
-#                if abs(wmPathsAlpha - 1.0) <= 0.01:
-#                    wmPathsAlpha = 1.0
-#        else:
-#            if wmPathsAlpha != 0.0:
-#                wmPathsAlpha = time_lerp(wmPathsAlpha, 0.0, 5)
-#                if wmPathsAlpha <= 0.01:
-#                    wmPathsAlpha = 0.0
-#
-#        if worldmapCountries:
-#            if wmCountriesAlpha != 1.0:
-#                wmCountriesAlpha = time_lerp(wmCountriesAlpha, 1.0, 5)
-#                if abs(wmCountriesAlpha - 1.0) <= 0.01:
-#                    wmCountriesAlpha = 1.0
-#        else:
-#            if wmCountriesAlpha != 0.0:
-#                wmCountriesAlpha = time_lerp(wmCountriesAlpha, 0.0, 5)
-#                if wmCountriesAlpha <= 0.01:
-#                    wmCountriesAlpha = 0.0
-##
-#        if worldmapRegions:
-#            if wmRegionsAlpha != 1.0:
-#                wmRegionsAlpha = time_lerp(wmRegionsAlpha, 1.0, 5)
-#                if abs(wmRegionsAlpha - 1.0) <= 0.01:
-#                    wmRegionsAlpha = 1.0
-#        else:
-#            if wmRegionsAlpha != 0.0:
-#                wmRegionsAlpha = time_lerp(wmRegionsAlpha, 0.0, 5)
-#                if wmRegionsAlpha <= 0.01:
-#                    wmRegionsAlpha = 0.0
-#
-#        if worldmapTowns:
-#            if wmTownsAlpha != 1.0:
-#                wmTownsAlpha = time_lerp(wmTownsAlpha, 1.0, 5)
-#                if abs(wmTownsAlpha - 1.0) <= 0.01:
-#                    wmTownsAlpha = 1.0
-#        else:
-#            if wmTownsAlpha != 0.0:
-#                wmTownsAlpha = time_lerp(wmTownsAlpha, 0.0, 5)
-#                if wmTownsAlpha <= 0.01:
-#                    wmTownsAlpha = 0.0
+            self.x = self.clamp(self.x, min_x, 0)
+            self.y = self.clamp(self.y, min_y, 0)
 
+        def set_zoom(self, delta):
+            self.zoom_goal = self.clamp(
+                self.zoom_goal + delta,
+                self.zoom_min,
+                self.zoom_max,
+            )
 
-    def clamp(v, minv, maxv):
-        return max(minv, min(v, maxv))
+            mouse_x, mouse_y = renpy.get_mouse_pos()
+            screen_x = mouse_x / SCREEN_W
+            screen_y = mouse_y / SCREEN_H
 
-    def clamp_map():
-        global worldmapX, worldmapY
+            self.zoom_anchor_screen = (screen_x, screen_y)
+            self.zoom_anchor_map = self.screen_to_map(screen_x, screen_y)
 
-        scaledW = (WORLDMAP_X/SCREEN_W) * worldmapZoom 
-        scaledH = (WORLDMAP_Y/SCREEN_H) * worldmapZoom
+        def start_drag(self):
+            self.dragging = True
+            self.zoom_goal = self.zoom
+            self.update_zoom()
+            self.drag_start_mouse = renpy.get_mouse_pos()
+            self.drag_start_map = (self.x, self.y)
 
-        min_x = 1 - scaledW
-        min_y = 1 - scaledH
+        def stop_drag(self):
+            self.dragging = False
 
-        if currentMapMode == RPG and not mapGliding:         
-            worldspaceX, worldspaceY = screen_to_map(0.5, 0.5)
-            
-            worldspaceX = clamp(worldspaceX, (worldmapCenter[0]-wiggleLeft)/SCREEN_W, (worldmapCenter[0]+wiggleRight)/SCREEN_W)
-            worldspaceY = clamp(worldspaceY, (worldmapCenter[1]-wiggleUp)/SCREEN_H, (worldmapCenter[1]+wiggleDown)/SCREEN_H)
+        def update_movement(self):
+            if self.gliding:
+                self.dragging = False
+                current_x, current_y = self.screen_to_map(0.5, 0.5)
 
-            worldmapX = 0.5 - worldspaceX * worldmapZoom
-            worldmapY = 0.5 - worldspaceY * worldmapZoom
+                if self.initial_zoom_difference == 0:
+                    goal_x = time_lerp(current_x, self.target_x, 5.0)
+                    goal_y = time_lerp(current_y, self.target_y, 5.0)
+                else:
+                    current_difference = self.zoom - self.zoom_goal
+                    factor = 1.0 - current_difference / self.initial_zoom_difference
+                    initial_x, initial_y = self.initial_coordinates
+                    goal_x = initial_x + (self.target_x - initial_x) * factor
+                    goal_y = initial_y + (self.target_y - initial_y) * factor
 
-        worldmapX = clamp(worldmapX, min_x, 0)
-        worldmapY = clamp(worldmapY, min_y, 0)
+                reached_target = (
+                    abs(goal_x - self.target_x) <= 0.5 / SCREEN_W
+                    and abs(goal_y - self.target_y) <= 0.5 / SCREEN_H
+                )
 
+                if reached_target:
+                    self.x = -self.target_x * self.zoom_goal + 0.5
+                    self.y = -self.target_y * self.zoom_goal + 0.5
+                    self.gliding = False
+                else:
+                    self.x = -goal_x * self.zoom + 0.5
+                    self.y = -goal_y * self.zoom + 0.5
 
-    def worldmap_set_zoom(delta):
-        global worldmapZoomGoal
-        global zoomAnchorMapX, zoomAnchorMapY
-        global zoomAnchorScreenX, zoomAnchorScreenY
+                self.clamp_map()
+                self.zoom_anchor_screen = (0.5, 0.5)
+                self.zoom_anchor_map = (self.target_x, self.target_y)
+                return
 
-        worldmapZoomGoal = clamp(
-            worldmapZoomGoal + delta,
-            worldmapZoomMin,
-            worldmapZoomMax
-        )
+            if not self.dragging:
+                return
 
-        mx, my = renpy.get_mouse_pos()
+            mouse_x, mouse_y = renpy.get_mouse_pos()
+            dx = mouse_x - self.drag_start_mouse[0]
+            dy = mouse_y - self.drag_start_mouse[1]
 
-        # Screen-space anchor
-        zoomAnchorScreenX = mx/SCREEN_W
-        zoomAnchorScreenY = my/SCREEN_H
+            self.x = self.drag_start_map[0] + dx / SCREEN_W
+            self.y = self.drag_start_map[1] + dy / SCREEN_H
+            self.clamp_map()
 
-        # Convert mouse to map space ONCE
-        zoomAnchorMapX = (mx/SCREEN_W - worldmapX) / worldmapZoom
-        zoomAnchorMapY = (my/SCREEN_H - worldmapY) / worldmapZoom
+        def update_zoom(self):
+            update_dt()
 
+            if self.zoom == self.zoom_goal:
+                return
 
-    def start_drag():
-        global mapDragging, dragStartMouse, dragStartMap, worldmapZoomGoal
-        mapDragging = True
-        #Stop zooming
-        worldmapZoomGoal = worldmapZoom
-        worldmap_update_zoom()
+            t = self.clamp((self.zoom - 1.0) / (self.zoom_max - 1.0), 0.0, 1.0)
+            lerp_factor = lerp(4.0, 6.0, t)
+            self.zoom = time_lerp(self.zoom, self.zoom_goal, lerp_factor)
 
-        dragStartMouse = renpy.get_mouse_pos()
-        dragStartMap = (worldmapX, worldmapY)
+            threshold = 0.001 if self.zoom <= 1 else 0.01
+            if abs(self.zoom - self.zoom_goal) <= threshold:
+                self.zoom = self.zoom_goal
 
-    def stop_drag():
-        global mapDragging
-        mapDragging = False
+            self.icon_zoom = remap_values(self.zoom, 2.0, 0.8, 1.0, 0.25)
 
-    def worldmap_update_movement():
-        global worldmapX, worldmapY, mapGliding, mapDragging, zoomAnchorScreenX, zoomAnchorScreenY, zoomAnchorMapX, zoomAnchorMapY
+            if not self.gliding:
+                anchor_screen_x, anchor_screen_y = self.zoom_anchor_screen
+                anchor_map_x, anchor_map_y = self.zoom_anchor_map
+                self.x = anchor_screen_x - anchor_map_x * self.zoom
+                self.y = anchor_screen_y - anchor_map_y * self.zoom
 
-        if mapGliding:
-            mapDragging = False
-            #screen to world space
-            currWorldspaceX = (0.5 - worldmapX) / worldmapZoom
-            currWorldspaceY = (0.5 - worldmapY) / worldmapZoom
+            self.clamp_map()
 
-            #interpolate correct worldspace coordinates
-            if initialZoomDifferential == 0:
-                currWorldspaceGoalX = time_lerp(currWorldspaceX, worldmapXGoal, 5.0)#(abs(initialZoomDifferential)+1)*0.4)
-                currWorldspaceGoalY = time_lerp(currWorldspaceY, worldmapYGoal, 5.0)#(abs(initialZoomDifferential)+1)*0.4)
+        def reset(self):
+            self.zoom = 1.0
+            self.zoom_goal = 1.0
+            self.icon_zoom = 1.0
+            self.x = 0.0
+            self.y = 0.0
+            self.clamp_map()
+
+        def prepare(self, zoom=1.5, x=4734, y=2784):
+            self.zoom = zoom
+            self.zoom_goal = zoom
+            self.icon_zoom = remap_values(self.zoom, 2.0, 0.8, 1.0, 0.25)
+            self.center_on_map(x, y)
+
+            if self.mode == LORE:
+                self.prepare_lore()
+            elif self.mode == RPG:
+                self.prepare_rpg()
+
+            self.clamp_map()
+            self.zoom_anchor_screen = (0.5, 0.5)
+            self.zoom_anchor_map = self.screen_to_map(0.5, 0.5)
+
+        def screen_to_map(self, screen_x, screen_y):
+            map_x = (screen_x - self.x) / self.zoom
+            map_y = (screen_y - self.y) / self.zoom
+            return map_x, map_y
+
+        def map_to_screen(self, map_x, map_y):
+            screen_x = self.x + map_x / SCREEN_W * self.zoom
+            screen_y = self.y + map_y / SCREEN_H * self.zoom
+            return screen_x, screen_y
+
+        def center_on_map(self, map_x, map_y, screen_x=0.5, screen_y=0.5):
+            self.x = screen_x - (map_x / SCREEN_W * self.zoom)
+            self.y = screen_y - (map_y / SCREEN_H * self.zoom)
+
+        def map_to_screen_int(self, map_x, map_y):
+            screen_x = int(self.x * SCREEN_W + map_x * self.zoom)
+            screen_y = int(self.y * SCREEN_H + map_y * self.zoom)
+            return screen_x, screen_y
+
+        def glide_to(self, zoom, x, y, xoffset=0, yoffset=0):
+            self.zoom_goal = zoom
+            self.target_x = (x - xoffset / self.zoom_goal) / SCREEN_W
+            self.target_y = (y - yoffset / self.zoom_goal) / SCREEN_H
+            self.gliding = True
+            self.initial_zoom_difference = self.zoom - self.zoom_goal
+            self.initial_coordinates = self.screen_to_map(0.5, 0.5)
+
+        def capture_state(self):
+            map_x, map_y = self.screen_to_map(0.5, 0.5)
+            return {
+                "map_x": int(map_x * SCREEN_W),
+                "map_y": int(map_y * SCREEN_H),
+                "zoom": self.zoom,
+                "paths": self.show_paths,
+                "regions": self.show_regions,
+                "countries": self.show_countries,
+                "towns": self.show_towns,
+            }
+
+        def restore_state(self, state):
+            if not state:
+                return
+
+            self.toggle_paths(state["paths"])
+            self.toggle_regions(state["regions"])
+            self.toggle_countries(state["countries"])
+            self.toggle_towns(state["towns"])
+            self.glide_to(state["zoom"], state["map_x"], state["map_y"])
+
+        def _set_overlay(self, attribute, screen_name, value=None):
+            current = getattr(self, attribute)
+            enabled = not current if value is None else value
+            setattr(self, attribute, enabled)
+
+            if enabled:
+                renpy.show_screen(screen_name)
             else:
-                currentZoomDifferential = worldmapZoom - worldmapZoomGoal 
-                factor = 1.0 - currentZoomDifferential / initialZoomDifferential
-                currWorldspaceGoalX = initialCoordinatesX + (worldmapXGoal - initialCoordinatesX) * factor
-                currWorldspaceGoalY = initialCoordinatesY + (worldmapYGoal - initialCoordinatesY) * factor
+                renpy.hide_screen(screen_name)
 
-            #ensure complete lerping to target
-            #renpy.log(f"Worldspace after interpolation: {currWorldspaceGoalX}, {currWorldspaceGoalY}")
+        def toggle_countries(self, value=None):
+            self._set_overlay("show_countries", "s_worldmap_loreoverlay_countries", value)
 
-    #        if currWorldspaceGoalX > worldmapXGoal:
-    #            currWorldspaceGoalX = math.floor(currWorldspaceGoalX)
-    #        else:
-    #            currWorldspaceGoalX = math.ceil(currWorldspaceGoalX)
-#
-    #        if currWorldspaceGoalY > worldmapYGoal:
-    #            currWorldspaceGoalY = math.floor(currWorldspaceGoalY)
-    #        else:
-    #            currWorldspaceGoalY = math.ceil(currWorldspaceGoalY)
+        def toggle_paths(self, value=None):
+            self._set_overlay("show_paths", "s_worldmap_loreoverlay_paths", value)
 
-            #renpy.log(f"Worldspace after rounding: {currWorldspaceGoalX}, {currWorldspaceGoalY}")
-            #renpy.log(f"Difference to worldmapXGoal: {currWorldspaceGoalX - worldmapXGoal}, {currWorldspaceGoalY - worldmapYGoal}")
+        def toggle_regions(self, value=None):
+            self._set_overlay("show_regions", "s_worldmap_loreoverlay_regions", value)
 
-            #back to screen space
-            if abs(currWorldspaceGoalX - worldmapXGoal) <= 0.5/SCREEN_W and abs(currWorldspaceGoalY - worldmapYGoal) <= 0.5/SCREEN_H:
-                worldmapX = -worldmapXGoal*worldmapZoomGoal+0.5
-                worldmapY = -worldmapYGoal*worldmapZoomGoal+0.5
+        def toggle_towns(self, value=None):
+            self._set_overlay("show_towns", "s_worldmap_loreoverlay_towns", value)
 
-                mapGliding = False
+        def set_all_overlays(self, value):
+            self.toggle_regions(value)
+            self.toggle_paths(value)
+            self.toggle_countries(value)
+            self.toggle_towns(value)
+
+        def reset_clouds(self):
+            self.cloud_positions = {}
+            self.cloud_anchors = {}
+            self.cloud_velocity = {}
+            self.cloud_velocity_target = {}
+            self.cloud_timers = {}
+            self.cloud_override_timer = 0.0
+
+        def update_clouds(self):
+            if self.mode == LORE:
+                return
+
+            if self.cloud_override_timer > 0:
+                self.cloud_override_timer -= dt
+                return
+
+            max_radius = 50
+            max_velocity = 5
+
+            for cloud_id, (x, y) in list(self.cloud_positions.items()):
+                anchor_x, anchor_y = self.cloud_anchors[cloud_id]
+                velocity_x, velocity_y = self.cloud_velocity.get(cloud_id, (0, 0))
+                target_x, target_y = self.cloud_velocity_target.get(cloud_id, (0, 0))
+                self.cloud_timers[cloud_id] -= dt
+
+                if self.cloud_timers[cloud_id] <= 0:
+                    self.cloud_timers[cloud_id] = random.uniform(2, 6)
+                    target_x = random.uniform(-max_velocity, max_velocity)
+                    target_y = random.uniform(-max_velocity, max_velocity)
+                    self.cloud_velocity_target[cloud_id] = (target_x, target_y)
+
+                velocity_x = time_lerp(velocity_x, target_x, 0.5)
+                velocity_y = time_lerp(velocity_y, target_y, 0.5)
+
+                new_x = x + velocity_x * dt
+                new_y = y + velocity_y * dt
+
+                dx = new_x - anchor_x
+                dy = new_y - anchor_y
+                distance = math.hypot(dx, dy)
+
+                if distance > max_radius:
+                    pull = (distance - max_radius) * 0.05
+                    new_x -= dx / distance * pull
+                    new_y -= dy / distance * pull
+
+                self.cloud_positions[cloud_id] = (new_x, new_y)
+                self.cloud_velocity[cloud_id] = (velocity_x, velocity_y)
+
+        def switch_mode(self):
+            if self.mode == LORE:
+                self.prepare_rpg()
+            elif self.mode == RPG:
+                self.prepare_lore()
+
+        def prepare_lore(self):
+            self.mode = LORE
+            self.zoom_min = 0.25
+
+            if self.mode_state_backup:
+                self.restore_state(self.mode_state_backup)
             else:
-                worldmapX = -currWorldspaceGoalX*worldmapZoom+0.5
-                worldmapY = -currWorldspaceGoalY*worldmapZoom+0.5
+                self.zoom_goal = 0.25
 
-            
-            #currWorldspaceY = int((SCREEN_H // 2 - worldmapY) / worldmapZoom)
-            clamp_map()
-            zoomAnchorScreenX = 0.5
-            zoomAnchorScreenY = 0.5
+            renpy.hide_screen("s_worldmap_rpgoverlay")
+            renpy.hide_screen("s_dungeon_info")
 
-            zoomAnchorMapX = worldmapXGoal
-            zoomAnchorMapY = worldmapYGoal
-            return
+        def prepare_rpg(self):
+            self.mode = RPG
+            area_info = LOCATIONS_WORLDMAP_RPG.get(self.current_area)
+            if not area_info:
+                return
 
-        #renpy.log(f"Screenspace: {worldmapX}, {worldmapY}")
+            self.mode_state_backup = self.capture_state()
+            self.set_all_overlays(False)
+            self.glide_to(1.0, area_info.get("targetx"), area_info.get("targety"))
 
-        if not mapDragging:
-            return
+            self.map_center = (area_info.get("targetx"), area_info.get("targety"))
+            self.wiggle_left = area_info.get("wiggleleft", 0)
+            self.wiggle_right = area_info.get("wiggleright", 0)
+            self.wiggle_up = area_info.get("wiggleup", 0)
+            self.wiggle_down = area_info.get("wiggledown", 0)
+            self.zoom_min = 0.9
 
-        mx, my = renpy.get_mouse_pos()
-        dx = mx - dragStartMouse[0]
-        dy = my - dragStartMouse[1]
+            self.reset_clouds()
+            for cloud_id, cloud in area_info.get("clouds", {}).items():
+                cloud_x = cloud["x"]
+                cloud_y = cloud["y"]
+                self.cloud_anchors[cloud_id] = (cloud_x, cloud_y)
 
-        worldmapX = dragStartMap[0] + dx/SCREEN_W
-        worldmapY = dragStartMap[1] + dy/SCREEN_H
+                spawn_x = cloud_x + (cloud_x - self.map_center[0]) / 4
+                spawn_y = cloud_y + (cloud_y - self.map_center[1]) / 4
+                self.cloud_positions[cloud_id] = (spawn_x, spawn_y)
+                self.cloud_velocity[cloud_id] = (0, 0)
+                self.cloud_velocity_target[cloud_id] = (0, 0)
+                self.cloud_timers[cloud_id] = 0
 
-        clamp_map()
-
-    def worldmap_update_zoom():
-        global worldmapZoom, worldmapZoomIcons, worldmapX, worldmapY
-        update_dt()
-
-        if worldmapZoom == worldmapZoomGoal:
-            return
-
-        t = clamp((worldmapZoom - 1.0) / (worldmapZoomMax - 1.0), 0.0, 1.0)
-        lerp_factor = lerp(4.0, 6.0, t)
-
-        worldmapZoom = time_lerp(worldmapZoom, worldmapZoomGoal, lerp_factor)
-
-        if worldmapZoom <= 1:
-            if abs(worldmapZoom - worldmapZoomGoal) <= 0.001: 
-                worldmapZoom = worldmapZoomGoal 
-        else: 
-            if abs(worldmapZoom - worldmapZoomGoal) <= 0.01:
-                worldmapZoom = worldmapZoomGoal
-
-        #t = clamp((worldmapZoomIcons - 1.0) / (worldmapZoomMax - 1.0), 0.0, 1.0)
-        #lerp_factor = lerp(0.1, 0.2, t)*10
-
-        worldmapZoomIcons = remap_values(worldmapZoom, 2.0, 0.8, 1.0, 0.25)
-        #worldmapZoomIcons = worldmapZoomIconsGoal lerp(worldmapZoomIcons, worldmapZoomIconsGoal, lerp_factor)
-
-        #if worldmapZoomIcons <= 1:
-        #    if abs(worldmapZoomIcons - worldmapZoomIconsGoal) <= 0.002: 
-        #        worldmapZoomIcons = worldmapZoomIconsGoal 
-        #else: 
-        #    if abs(worldmapZoomIcons - worldmapZoomIconsGoal) <= 0.02:
-        #        worldmapZoomIcons = worldmapZoomIconsGoal
-#
-        # Reposition map so anchor stays fixed under mouse
-        if not mapGliding:
-            worldmapX = zoomAnchorScreenX - zoomAnchorMapX * worldmapZoom
-            worldmapY = zoomAnchorScreenY - zoomAnchorMapY * worldmapZoom
-
-        clamp_map()
+            renpy.show_screen("s_worldmap_rpgoverlay")
+            renpy.hide_screen("s_wm_info")
 
 
-    def reset_map():
-        global worldmapZoom, worldmapX, worldmapY
-        worldmapZoom = 1.0
-        worldmapZoomIcons = 1.0
-        worldmapX = 0
-        worldmapY = 0
-        clamp_map()
+default worldmap = WorldMapController()
 
-    #x/y from top left corner
-    def prepare_worldmap(zoom = 1.5, x = 4734, y = 2784):
-        global worldmapZoom, worldmapZoomIcons, worldmapZoomGoal, worldmapX, worldmapY, zoomAnchorScreenX, zoomAnchorScreenY, zoomAnchorMapX, zoomAnchorMapY
+# Labels and screens
 
-        worldmapZoomGoal = zoom
-        worldmapZoom = zoom
-        worldmapZoomIcons = remap_values(worldmapZoom, 2.0, 0.8, 1.0, 0.25)
-        #sets worldmapX/Y with desired zoomlevel
-        center_on_map(x, y)
-
-        if currentMapMode == LORE:
-            prepare_worldmap_lore()
-        elif currentMapMode == RPG:
-            prepare_worldmap_rpg()
-
-        clamp_map()
-
-        zoomAnchorScreenX = 0.5
-        zoomAnchorScreenY = 0.5
-
-        zoomAnchorMapX = (zoomAnchorScreenX - worldmapX) // worldmapZoom
-        zoomAnchorMapY = (zoomAnchorScreenY - worldmapY) // worldmapZoom
-
-    def screen_to_map(screenX, screenY):
-        mapX = (screenX - worldmapX) / worldmapZoom
-        mapY = (screenY - worldmapY) / worldmapZoom
-        return mapX, mapY
-
-    def map_to_screen(mapX, mapY):
-        screenX = worldmapX + mapX/SCREEN_W * worldmapZoom
-        screenY = worldmapY + mapY/SCREEN_H * worldmapZoom
-        return screenX, screenY
-
-    def center_on_map(mapX, mapY, screenX=0.5, screenY=0.5):
-        global worldmapX, worldmapY
-
-        worldmapX = screenX - (mapX / SCREEN_W * worldmapZoom)
-        worldmapY = screenY - (mapY / SCREEN_H * worldmapZoom)
-
-    def map_to_screen_int(mapX, mapY):
-        screenX = int((worldmapX*SCREEN_W + mapX * worldmapZoom))
-        screenY = int((worldmapY*SCREEN_H + mapY * worldmapZoom))
-        return screenX, screenY
-
-
-    def glideto_worldmap(zoom, x, y, xoffset = 0, yoffset = 0):
-        global worldmapZoomGoal, worldmapXGoal, worldmapYGoal, mapGliding, initialZoomDifferential, initialCoordinatesX, initialCoordinatesY
-        worldmapZoomGoal = zoom
-        worldmapXGoal = (x-xoffset/worldmapZoomGoal)/SCREEN_W
-        worldmapYGoal = (y-yoffset/worldmapZoomGoal)/SCREEN_H
-        mapGliding = True
-        initialZoomDifferential = worldmapZoom - worldmapZoomGoal
-        initialCoordinatesX, initialCoordinatesY = screen_to_map(0.5, 0.5)
-
-    def save_worldmap_state():
-        global wmStateBackup
-        x, y  = screen_to_map(0.5, 0.5)#, SCREEN_W // 2, SCREEN_H // 2)
-        x = int(x*1920)
-        y = int(y*1080)
-        return {
-            "mapspaceX": x,
-            "mapspaceY": y,
-            "worldmapZoom": worldmapZoom,
-            "worldmapPaths": worldmapPaths,
-            "worldmapRegions": worldmapRegions,
-            "worldmapCountries": worldmapCountries,
-            "worldmapTowns": worldmapTowns,
-        }
-
-    def restore_worldmap_state(state):
-        global worldmapPaths, worldmapRegions, worldmapCountries, worldmapTowns
-        toggle_wm_paths(state["worldmapPaths"])
-        toggle_wm_regions(state["worldmapRegions"])
-        toggle_wm_countries(state["worldmapCountries"])
-        toggle_wm_towns(state["worldmapTowns"])
-        glideto_worldmap(state["worldmapZoom"], state["mapspaceX"], state["mapspaceY"])
-
-
-    #Note: value can be True or False, use as a switch to turn it on.
-    def toggle_wm_countries(value = None):
-        global worldmapCountries
-        if value != None:
-            worldmapCountries = not value
-        if worldmapCountries:
-            renpy.hide_screen("s_worldmap_loreoverlay_countries")
-        else:
-            renpy.show_screen("s_worldmap_loreoverlay_countries")
-        worldmapCountries = not worldmapCountries
-
-    def toggle_wm_paths(value = None):
-        global worldmapPaths
-        if value != None:
-            worldmapPaths = not value
-        if worldmapPaths:
-            renpy.hide_screen("s_worldmap_loreoverlay_paths")
-        else:
-            renpy.show_screen("s_worldmap_loreoverlay_paths")
-        worldmapPaths = not worldmapPaths
-
-    def toggle_wm_regions(value = None):
-        global worldmapRegions
-        if value != None:
-            worldmapRegions = not value
-        if worldmapRegions:
-            renpy.hide_screen("s_worldmap_loreoverlay_regions")
-        else:
-            renpy.show_screen("s_worldmap_loreoverlay_regions")
-        worldmapRegions = not worldmapRegions
-        
-    def toggle_wm_towns(value = None):
-        global worldmapTowns
-        if value != None:
-            worldmapTowns = not value
-        if worldmapTowns:
-            renpy.hide_screen("s_worldmap_loreoverlay_towns")
-        else:
-            renpy.show_screen("s_worldmap_loreoverlay_towns")
-        worldmapTowns = not worldmapTowns
-
-    def reset_clouds():
-        global clouds_positions, clouds_anchors, clouds_velocity, clouds_velocity_target, clouds_timers, override_timer
-        clouds_positions = {}
-        clouds_anchors = {}
-        clouds_velocity = {}
-        clouds_velocity_target = {}
-        clouds_timers = {}
-        override_timer = 0
-
-    def worldmap_update_clouds():
-        global clouds_positions, clouds_velocity, clouds_velocity_target, clouds_timers, override_timer
-
-        #dt is global, and updated here in wm move function every frame
-        if currentMapMode == LORE:
-            return
-
-        if override_timer > 0:
-            override_timer -= dt
-            return
-
-        MAX_RADIUS = 50
-        MAX_VELOCITY = 5
-
-        for cloud_id, (x, y) in clouds_positions.items():
-
-            ax, ay = clouds_anchors[cloud_id]
-            vx, vy = clouds_velocity.get(cloud_id, (0, 0))
-            vtx, vty = clouds_velocity_target.get(cloud_id, (0, 0))
-            clouds_timers[cloud_id] -= dt
-
-            if clouds_timers[cloud_id] <= 0:
-                clouds_timers[cloud_id] = random.uniform(2, 6)
-                vtx = random.uniform(-MAX_VELOCITY, MAX_VELOCITY)
-                vty = random.uniform(-MAX_VELOCITY, MAX_VELOCITY)
-                clouds_velocity_target[cloud_id] = (vtx, vty)
-            
-            vx = time_lerp(vx, vtx, 0.5)
-            vy = time_lerp(vy, vty, 0.5)
-
-            # move
-            new_x = x + vx * dt
-            new_y = y + vy * dt
-
-            # soft boundary pull (keeps near anchor)
-            dx = new_x - ax
-            dy = new_y - ay
-            dist = math.hypot(dx, dy)
-
-            if dist > MAX_RADIUS:
-                pull = (dist - MAX_RADIUS) * 0.05
-                new_x -= dx / dist * pull
-                new_y -= dy / dist * pull
-
-            clouds_positions[cloud_id] = (new_x, new_y)
-            clouds_velocity[cloud_id] = (vx, vy)
-
-
-        #Alternate Cloud Movement
-
-        #MAX_RADIUS = 50
-        #ACCEL = 1.0        # how much direction changes
-        #DAMPING = 0.98     # slows velocity (momentum feel)
-        #MAX_SPEED = 10
-        #
-        #for cloud_id, (x, y) in clouds_positions.items():
-                #
-        #    ax, ay = clouds_anchors[cloud_id]
-        #    vx, vy = clouds_velocity.get(cloud_id, (0, 0))
-        #
-        #    # small random acceleration (smooth randomness)
-        #    noise_x = random.uniform(-1, 1)
-        #    noise_y = random.uniform(-1, 1)
-        #
-        #    vx += noise_x * ACCEL
-        #    vy += noise_y * ACCEL
-        #
-        #    # limit speed
-        #    speed = math.hypot(vx, vy)
-        #    if speed > MAX_SPEED:
-        #        vx *= MAX_SPEED / speed
-        #        vy *= MAX_SPEED / speed
-        #
-        #    # damping (creates momentum feel)
-        #    vx *= DAMPING
-        #    vy *= DAMPING
-        #
-        #    # move
-        #    new_x = x + vx * dt
-        #    new_y = y + vy * dt
-        #
-        #    # soft boundary pull (keeps near anchor)
-        #    dx = new_x - ax
-        #    dy = new_y - ay
-        #    dist = math.hypot(dx, dy)
-        #
-        #    if dist > MAX_RADIUS:
-        #        pull = (dist - MAX_RADIUS) * 0.05
-        #        new_x -= dx / dist * pull
-        #        new_y -= dy / dist * pull
-        #
-        #    clouds_positions[cloud_id] = (new_x, new_y)
-        #    clouds_velocity[cloud_id] = (vx, vy)
-
-
-
-################################################## RPG MODE FUNCTIONS ##########################################################
-
-    def switch_worldmap_mode():
-        if currentMapMode == LORE:
-            prepare_worldmap_rpg()
-
-        elif currentMapMode == RPG:
-            prepare_worldmap_lore()
-
-    def prepare_worldmap_lore():
-        global currentMapMode, worldmapZoomMin, worldmapZoomGoal
-        currentMapMode = LORE
-        worldmapZoomMin = 0.25
-        if wmStateBackup:
-            restore_worldmap_state(wmStateBackup)
-        worldmapZoomGoal = 0.25
-        renpy.hide_screen("s_worldmap_rpgoverlay")
-        renpy.hide_screen("s_dungeon_info")
-
-
-    def prepare_worldmap_rpg():
-        global currentMapMode, wmStateBackup, worldmapCenter, wiggleLeft, wiggleRight, wiggleUp, wiggleDown, worldmapZoomMin, clouds_positions, clouds_anchors, clouds_velocity, clouds_velocity_target, clouds_timers
-        currentMapMode = RPG
-        areaInfo = LOCATIONS_WORLDMAP_RPG.get(currentArea)
-        wmStateBackup = save_worldmap_state()
-        toggle_wm_regions(False)
-        toggle_wm_paths(False)
-        toggle_wm_countries(False)
-        toggle_wm_towns(False)
-        glideto_worldmap(1, areaInfo.get("targetx"), areaInfo.get("targety")) 
-        worldmapCenter = (areaInfo.get("targetx"), areaInfo.get("targety"))
-        wiggleLeft = areaInfo.get("wiggleleft")
-        wiggleRight = areaInfo.get("wiggleright")
-        wiggleUp = areaInfo.get("wiggleup")
-        wiggleDown = areaInfo.get("wiggledown")
-        worldmapZoomMin = 0.9
-        reset_clouds()
-        for cloud_id, cloud in LOCATIONS_WORLDMAP_RPG.get(currentArea).get("clouds").items():
-            clouds_anchors[cloud_id] = [cloud["x"], cloud["y"]]
-            spawnX = cloud["x"]+(cloud["x"]-worldmapCenter[0])/4
-            spawnY = cloud["y"]+(cloud["y"]-worldmapCenter[1])/4
-            clouds_positions[cloud_id] = [spawnX, spawnY]
-            clouds_velocity[cloud_id] = (0,0)
-            clouds_velocity_target[cloud_id] = (0,0)
-            clouds_timers[cloud_id] = 0
-
-        renpy.show_screen("s_worldmap_rpgoverlay")
-        renpy.hide_screen("s_wm_info")
-
-
-#Careful about callstack when implementing this!
 label wm_jump_town(target):
     jump toggle_worldmap
 
@@ -624,15 +403,12 @@ screen s_worldmap():
     zorder 0
     modal True
 
-    timer 0.03 action [Function(worldmap_update_zoom), Function(worldmap_update_movement), Function(worldmap_update_clouds)] repeat True
-    #timer 0.025 action [Function(worldmap_update_clouds)] repeat True
+    timer 0.03 action [Function(worldmap.update_zoom), Function(worldmap.update_movement), Function(worldmap.update_clouds)] repeat True
 
     fixed at popin_bounce, fadein:
         align (0.5, 0.5)
-        # Background dim
         add Solid("#0008")
 
-        # ===== VIEWPORT =====
         fixed:
             xpos 0
             ypos 0
@@ -640,18 +416,16 @@ screen s_worldmap():
             ysize SCREEN_H
             clipping True
 
-        # ===== INPUT HANDLING =====
-        key "mousedown_1" action Function(start_drag)
-        key "mouseup_1" action Function(stop_drag)
-        key "mousedown_4" action Function(worldmap_set_zoom, 0.2)
-        key "mousedown_5" action Function(worldmap_set_zoom, -0.2)
+        key "mousedown_1" action Function(worldmap.start_drag)
+        key "mouseup_1" action Function(worldmap.stop_drag)
+        key "mousedown_4" action Function(worldmap.set_zoom, 0.2)
+        key "mousedown_5" action Function(worldmap.set_zoom, -0.2)
 
-        # Map container Main
         add "gui/maps/worldmap/worldmap_base.png" at colortransform(tint=todTintDict[tod], alphav = 1):
             subpixel True
-            xpos worldmapX
-            ypos worldmapY
-            zoom worldmapZoom
+            xpos worldmap.x
+            ypos worldmap.y
+            zoom worldmap.zoom
 
 
 transform screen_dissolve:
@@ -667,7 +441,6 @@ screen s_worldmap_ui():
     fixed at popin_bounce, fadein:
         align (0.5, 0.5)
 
-        # ===== UI =====            
         hbox:
             align(0.99, 0.99)
             spacing 0
@@ -676,7 +449,7 @@ screen s_worldmap_ui():
                 idle "gui/icons/return_icon.png"
                 action [Jump("return_worldmap")] at dyn_hover_effect
 
-        if currentMapMode == LORE and not wmInfoShowing:
+        if worldmap.mode == LORE and not worldmap.info_showing:
             fixed:
                 xysize (250, 325)
                 align(0.007, 0.99)
@@ -687,10 +460,10 @@ screen s_worldmap_ui():
                         button at dyn_hover_effect:
                             xysize (250, 75)
                             align (0.5, 0.5)
-                            selected worldmapCountries
+                            selected worldmap.show_countries
                             selected_background "gui/maps/worldmap/worldmap_selectionbutton_selected.png"
                             background "gui/maps/worldmap/worldmap_selectionbutton.png"
-                            action Function(toggle_wm_countries)
+                            action Function(worldmap.toggle_countries)
                         text "Countries & Borders" style "textstarry":
                             yoffset 2
                             align (0.5, 0.5)
@@ -700,10 +473,10 @@ screen s_worldmap_ui():
                         button at dyn_hover_effect:
                             xysize (250, 75)
                             align (0.5, 0.5)
-                            selected worldmapRegions
+                            selected worldmap.show_regions
                             selected_background "gui/maps/worldmap/worldmap_selectionbutton_selected.png"
                             background "gui/maps/worldmap/worldmap_selectionbutton.png"
-                            action Function(toggle_wm_regions)
+                            action Function(worldmap.toggle_regions)
                         text "Major Regions" style "textstarry":
                             yoffset 2
                             align (0.5, 0.5)
@@ -713,10 +486,10 @@ screen s_worldmap_ui():
                         button at dyn_hover_effect:
                             xysize (250, 75)
                             align (0.5, 0.5)
-                            selected worldmapPaths
+                            selected worldmap.show_paths
                             selected_background "gui/maps/worldmap/worldmap_selectionbutton_selected.png"
                             background "gui/maps/worldmap/worldmap_selectionbutton.png"
-                            action Function(toggle_wm_paths)
+                            action Function(worldmap.toggle_paths)
                         text "Towns & Travel Routes" style "textstarry":
                             yoffset 2
                             align (0.5, 0.5)
@@ -726,16 +499,16 @@ screen s_worldmap_ui():
                         button at dyn_hover_effect:
                             xysize (250, 75)
                             align (0.5, 0.5)
-                            selected worldmapTowns
+                            selected worldmap.show_towns
                             selected_background "gui/maps/worldmap/worldmap_selectionbutton_selected.png"
                             background "gui/maps/worldmap/worldmap_selectionbutton.png"
-                            action Function(toggle_wm_towns)
+                            action Function(worldmap.toggle_towns)
                         text "Town Icons" style "textstarry":
                             yoffset 2
                             align (0.5, 0.5)
                             text_align 0.5
 
-            if not wmInfoShowing:
+            if not worldmap.info_showing:
                 hbox:
                     align (0.01, 0.01)
                     imagebutton:
@@ -744,7 +517,7 @@ screen s_worldmap_ui():
                         idle "gui/icons/lore_icon.png"
                         hovered [Function(set_tooltip_data, "Swap Mode", 0.01, 0.04, True, "textmaplabel")]
                         unhovered [Function(clear_tooltip_data)]
-                        action [Function(switch_worldmap_mode)] at dyn_hover_effect
+                        action [Function(worldmap.switch_mode)] at dyn_hover_effect
 
                     text f"Lore":
                         font "fonts/map/IM FELL English Bold.ttf"
@@ -757,62 +530,57 @@ screen s_worldmap_ui():
         text "Elysterra" style "header" at loc_popup
 
 
-    
+
 
 screen s_worldmap_loreoverlay_countries():
     zorder 1
     fixed at screen_dissolve:
         align (0.5, 0.5)
-        # Map container        
         add "gui/maps/worldmap/worldmap_countries_s.png":
             subpixel True
-            xpos worldmapX
-            ypos worldmapY
-            zoom worldmapZoom * 2
+            xpos worldmap.x
+            ypos worldmap.y
+            zoom worldmap.zoom * 2
 
 screen s_worldmap_loreoverlay_paths():
     zorder 2
     fixed at screen_dissolve:
         align (0.5, 0.5)
-        # Map container        
         add "gui/maps/worldmap/worldmap_paths_s.png":
             subpixel True
-            xpos worldmapX
-            ypos worldmapY
-            zoom worldmapZoom * 2
+            xpos worldmap.x
+            ypos worldmap.y
+            zoom worldmap.zoom * 2
 
 screen s_worldmap_loreoverlay_regions():
     zorder 3
     fixed at screen_dissolve:
         align (0.5, 0.5)
-        # Map container        
         add "gui/maps/worldmap/worldmap_labels_regions_s.png":
             subpixel True
-            xpos worldmapX
-            ypos worldmapY
-            zoom worldmapZoom * 2
+            xpos worldmap.x
+            ypos worldmap.y
+            zoom worldmap.zoom * 2
 
 screen s_worldmap_loreoverlay_towns():
     zorder 4
     fixed at screen_dissolve:
-        #TOWN ICONS
         align (0.5, 0.5)
 
         for loc_id, loc in LOCATIONS_WORLDMAP.items():
-            $ sx, sy = map_to_screen_int(loc["x"], loc["y"])
+            $ sx, sy = worldmap.map_to_screen_int(loc["x"], loc["y"])
             if -100 < sx < SCREEN_W+100 and -100 < sy < SCREEN_H+100:
-                if worldmapZoom >= 0.8:
-                    if loc["landmarks"][0] != "": #loc_id in wmTravelUnlock:
+                if worldmap.zoom >= 0.8:
+                    if loc["landmarks"][0] != "":
                         if loc["type"] == TOWN:
-                            imagebutton at dyn_hover_effect, dyn_zoom(worldmapZoomIcons):
+                            imagebutton at dyn_hover_effect, dyn_zoom(worldmap.icon_zoom):
                                 idle f"gui/icons/sigils/256/{loc['icon']}"
                                 xpos sx
                                 ypos sy
                                 anchor (0.5, 0.5)
                                 action [SetVariable("selectedLocation", loc_id), Jump("reopen_wm_info")]
-                                #action Call("wm_jump_town", loc["target"])
                     else:
-                        imagebutton at dyn_zoom(worldmapZoomIcons), colortransform(saturation = 0):
+                        imagebutton at dyn_zoom(worldmap.icon_zoom), colortransform(saturation = 0):
                             idle f"gui/icons/sigils/256/{loc['icon']}"
                             xpos sx
                             ypos sy
@@ -820,7 +588,7 @@ screen s_worldmap_loreoverlay_towns():
                             action [SetVariable("tempstring", "This towns info is still missing. Check again in future updates!"), Jump("mc_say")]
 
                 else:
-                    if loc["landmarks"][0] != "": #loc_id in wmTravelUnlock:
+                    if loc["landmarks"][0] != "":
                         if loc["type"] == TOWN:
                             imagebutton at dyn_hover_effect:
                                 idle f"gui/icons/sigils/64/{loc['icon']}"
@@ -828,9 +596,8 @@ screen s_worldmap_loreoverlay_towns():
                                 ypos sy
                                 anchor (0.5, 0.5)
                                 action [SetVariable("selectedLocation", loc_id), Jump("reopen_wm_info")]
-                                #action Call("wm_jump_town", loc["target"])
                     else:
-                        imagebutton at colortransform(saturation = 0):##at dyn_zoom(worldmapZoomIcons):#, dyn_hover_effect(saturation=0, brightness=-0.2):
+                        imagebutton at colortransform(saturation = 0):
                             idle f"gui/icons/sigils/64/{loc['icon']}"
                             xpos sx
                             ypos sy
@@ -840,72 +607,69 @@ screen s_worldmap_loreoverlay_towns():
 
 screen s_worldmap_rpgoverlay():
     zorder 1
-    fixed at screen_dissolve: 
+    fixed at screen_dissolve:
         align(0.5, 0.5)
 
-        #Dungeons
-        for dungeon_id, dungeon in LOCATIONS_WORLDMAP_RPG.get(currentArea).get("dungeons").items():
+        # Dungeon markers
+        for dungeon_id, dungeon in LOCATIONS_WORLDMAP_RPG.get(worldmap.current_area).get("dungeons").items():
             if not flags.has_flag(MAP, "rpg", dungeon_id):
-                #lockd symbol?
                 continue
 
-            $ sx, sy = map_to_screen_int(dungeon["x"], dungeon["y"])
-            imagebutton at dyn_hover_effect, dyn_zoom(worldmapZoom*0.4):
+            $ sx, sy = worldmap.map_to_screen_int(dungeon["x"], dungeon["y"])
+            imagebutton at dyn_hover_effect, dyn_zoom(worldmap.zoom*0.4):
                 idle f"gui/icons/sigils/256/{dungeon['icon']}"
                 xpos sx
                 ypos sy
                 anchor (0.5, 0.5)
-                action [SetVariable("selectedDungeon", dungeon_id), Jump("reopen_dungeon_info")]
-                #action Call("wm_jump_town", dungeon["target"])
+                action [Function(setattr, worldmap, "selected_dungeon", dungeon_id), Jump("reopen_dungeon_info")]
 
-            text dungeon["name"] at dyn_zoom(worldmapZoom*0.5):
+            text dungeon["name"] at dyn_zoom(worldmap.zoom*0.5):
                 font "fonts/map/IM FELL English Bold.ttf"
                 color "#ffce64"
                 outlines [ ( 3, "#2b2b2b", 2, 2) ]
                 anchor (0.5, 0.5)
                 xpos sx
-                ypos sy# + int(40 * worldmapZoom*0.5)
+                ypos sy
                 size 40
 
 
-        #Locations
+        # Travel locations
         for loc_id, loc in LOCATIONS_WORLDMAP.items():
             if not flags.has_flag(MAP, "rpg", loc_id):
                 continue
-            $ sx, sy = map_to_screen_int(loc["x"], loc["y"])
+            $ sx, sy = worldmap.map_to_screen_int(loc["x"], loc["y"])
             if -100 < sx < SCREEN_W+100 and -100 < sy < SCREEN_H+100:
                 if loc["type"] == TOWN:
-                    imagebutton at dyn_hover_effect, dyn_zoom(worldmapZoom*0.5):
+                    imagebutton at dyn_hover_effect, dyn_zoom(worldmap.zoom*0.5):
                         idle f"gui/icons/sigils/256/{loc['icon']}"
                         xpos sx
                         ypos sy
                         anchor (0.5, 0.5)
                         action [SetVariable("selectedLocation", loc_id), Jump("return_worldmap")]
-                        #action Call("wm_jump_town", loc["target"])
-                    
-                    text loc["name"] at dyn_zoom(worldmapZoom*0.5):
+
+                    text loc["name"] at dyn_zoom(worldmap.zoom*0.5):
                         font "fonts/map/IM FELL English Bold.ttf"
                         color "#ffce64"
                         outlines [ ( 3, "#2b2b2b", 2, 2) ]
                         anchor (0.5, 0.5)
                         xpos sx
-                        ypos sy# + int(60 * worldmapZoom*0.5)
+                        ypos sy
                         size 50
 
-        for cloud_id, cloud in LOCATIONS_WORLDMAP_RPG.get(currentArea).get("clouds").items():
-            $ sx, sy = map_to_screen(clouds_positions[cloud_id][0], clouds_positions[cloud_id][1])
-            add f"gui/maps/clouds/{cloud.get('icon')}.png" at dyn_zoom(worldmapZoom*cloud.get('zoomfactor', 1)), fadein(time = 1.5), colortransform(tint=todTintDict_weaker[tod], alphav = 1):
+        for cloud_id, cloud in LOCATIONS_WORLDMAP_RPG.get(worldmap.current_area).get("clouds").items():
+            $ sx, sy = worldmap.map_to_screen(worldmap.cloud_positions[cloud_id][0], worldmap.cloud_positions[cloud_id][1])
+            add f"gui/maps/clouds/{cloud.get('icon')}.png" at dyn_zoom(worldmap.zoom*cloud.get('zoomfactor', 1)), fadein(time = 1.5), colortransform(tint=todTintDict_weaker[tod], alphav = 1):
                 subpixel True
                 pos (sx, sy)
                 anchor (0.5, 0.5)
 
-        $ sx, sy = map_to_screen(4835, 2138)
-        add f"gui/maps/clouds/celestialpeak.png" at dyn_zoom(worldmapZoom), colortransform(tint=todTintDict_weaker[tod], alphav = 1):
+        $ sx, sy = worldmap.map_to_screen(4835, 2138)
+        add f"gui/maps/clouds/celestialpeak.png" at dyn_zoom(worldmap.zoom), colortransform(tint=todTintDict_weaker[tod], alphav = 1):
             pos (sx, sy)
             anchor (0.5, 0.5)
 
-        if not wmInfoShowing:
-            add f"gui/maps/general/scroll_{currentArea}.png" at fadein(), move_simple(0.5, 0.095, 2, 1.5), dyn_zoom_timed(1.0, 0.8, 2, 1.5):
+        if not worldmap.info_showing:
+            add f"gui/maps/general/scroll_{worldmap.current_area}.png" at fadein(), move_simple(0.5, 0.095, 2, 1.5), dyn_zoom_timed(1.0, 0.8, 2, 1.5):
                 align (0.5, 0.5)
 
             hbox:
@@ -916,7 +680,7 @@ screen s_worldmap_rpgoverlay():
                     idle "gui/icons/travel_icon.png"
                     hovered [Function(set_tooltip_data, "Swap Mode", 0.01, 0.04, True, "textmaplabel")]
                     unhovered [Function(clear_tooltip_data)]
-                    action [Function(switch_worldmap_mode)] at dyn_hover_effect
+                    action [Function(worldmap.switch_mode)] at dyn_hover_effect
 
                 text f"Travel":
                     font "fonts/map/IM FELL English Bold.ttf"
@@ -926,11 +690,11 @@ screen s_worldmap_rpgoverlay():
                     color "#ffce64"
                     outlines [ ( 3, "#2b2b2b", 2, 2) ]
 
-label reopen_dungeon_info: 
-    $ glideto_worldmap(2.0, LOCATIONS_WORLDMAP_RPG[currentArea]['dungeons'][selectedDungeon]["x"], LOCATIONS_WORLDMAP_RPG[currentArea]['dungeons'][selectedDungeon]["y"], 640) 
-    $ wmInfoShowing = True
-    $ wmStateBackup = save_worldmap_state()
-    $ worldmapCountries, worldmapRegions, worldmapPaths, worldmapTowns = False, False, False, False
+label reopen_dungeon_info:
+    $ worldmap.glide_to(2.0, LOCATIONS_WORLDMAP_RPG[worldmap.current_area]['dungeons'][worldmap.selected_dungeon]["x"], LOCATIONS_WORLDMAP_RPG[worldmap.current_area]['dungeons'][worldmap.selected_dungeon]["y"], 640)
+    $ worldmap.info_showing = True
+    $ worldmap.info_state_backup = worldmap.capture_state()
+    $ worldmap.set_all_overlays(False)
     hide screen s_dungeon_info
     show screen s_dungeon_info
     ""
@@ -938,20 +702,20 @@ label reopen_dungeon_info:
 label close_dungeon_info:
     hide screen s_dungeon_info
     $ clear_tooltip_data()
-    $ restore_worldmap_state(wmStateBackup)
-    $ wmInfoShowing = False
+    $ worldmap.restore_state(worldmap.info_state_backup)
+    $ worldmap.info_showing = False
     ""
 
 
 screen s_dungeon_info:
     zorder 6
     modal True
-    $ dungeoninfo = LOCATIONS_WORLDMAP_RPG[currentArea]['dungeons'][selectedDungeon]
+    $ dungeoninfo = LOCATIONS_WORLDMAP_RPG[worldmap.current_area]['dungeons'][worldmap.selected_dungeon]
 
     fixed at popin_bounce, fadein:
         align (0.5, 0.5)
         if dungeoninfo["bg"]:
-            add f"gui/maps/general/dungeonbgs/{selectedDungeon}.png":
+            add f"gui/maps/general/dungeonbgs/{worldmap.selected_dungeon}.png":
                 yalign 0.5
 
         add "gui/maps/general/dungeon_info_bg.png":
@@ -960,7 +724,6 @@ screen s_dungeon_info:
         vbox:
             xsize 1280
             ypos 54
-            #titlebox
             vbox:
                 xysize (1280, 150)
                 null height 8
@@ -981,31 +744,28 @@ screen s_dungeon_info:
             hbox:
                 fixed:
                     xysize (360, 1.0)
-                    #quests
                     viewport:
                         mousewheel True
                         ysize 782
                         vbox:
-                            for subarea, areainfo in DUNGEON_INFO[selectedDungeon]["subareas"].items():
-                                if flags.dungeons.has(selectedDungeon, subarea):
+                            for subarea, areainfo in DUNGEON_INFO[worldmap.selected_dungeon]["subareas"].items():
+                                if flags.dungeons.has(worldmap.selected_dungeon, subarea):
                                     fixed:
                                         ysize 100
                                         button at dyn_hover_effect, dyn_xyzoom(xz = 0.75):
-                                            selected selectedSubarea == subarea
+                                            selected worldmap.selected_subarea == subarea
                                             xysize (360, 100)
                                             background "gui/quests/quest_bg_slide.png"
                                             selected_foreground "gui/quests/quest_bg_slide_selected.png"
-                                            #if quests.get_bgslide(qid):
-                                            #    idle f"gui/quests/quest_bg_slide_{qid}.png"
-                                            hovered [SetVariable("hoveredSubarea", subarea)]
-                                            action SetVariable("selectedSubarea", subarea)
+                                            hovered [Function(setattr, worldmap, "hovered_subarea", subarea)]
+                                            action Function(setattr, worldmap, "selected_subarea", subarea)
 
                                         text f"{areainfo['name']}":
                                             size 30
                                             align (0.5, 0.5)
                                             text_align(0.5)
                                             outlines [ ( 2, "#0f0f0f", 0, 0) ]
-                                            
+
                                         text f"Lvl {areainfo.get('level')}":
                                             size 22
                                             align (0.96, 0.9)
@@ -1015,13 +775,11 @@ screen s_dungeon_info:
                                     fixed:
                                         ysize 100
                                         button at colortransform(saturation = 0), dyn_xyzoom(xz = 0.75):
-                                            selected selectedSubarea == subarea
+                                            selected worldmap.selected_subarea == subarea
                                             xysize (360, 100)
                                             background "gui/quests/quest_bg_slide.png"
                                             selected_foreground "gui/quests/quest_bg_slide_selected.png"
-                                            #if quests.get_bgslide(qid):
-                                            #    idle f"gui/quests/quest_bg_slide_{qid}.png"
-                                            hovered [SetVariable("hoveredSubarea", subarea)]
+                                            hovered [Function(setattr, worldmap, "hovered_subarea", subarea)]
                                             action NullAction()
 
                                         text f"{areainfo['name']}":
@@ -1050,8 +808,8 @@ screen s_dungeon_info:
                     vbox:
                         xsize 0.95
                         align (0.5, 0.3)
-                        if selectedSubarea:
-                            $ areaInfo = DUNGEON_INFO[selectedDungeon]["subareas"][selectedSubarea]
+                        if worldmap.selected_subarea:
+                            $ areaInfo = DUNGEON_INFO[worldmap.selected_dungeon]["subareas"][worldmap.selected_subarea]
                             null height 20
 
                             textbutton "Go to Dungeon!" style "textmaplabel" at dyn_hover_effect_inverse:
@@ -1061,24 +819,13 @@ screen s_dungeon_info:
 
                             null height 70
 
-                            text "NOTE: Dungeons are still under construction! So for now they consist of a series of consecutive battles.\n":
-                                size 30
-
-                            text "Also, the combat system is functional, but still being developed — especially in terms of content, visuals, and balance.\n":
-                                size 30
-                            
-                            text "Because of this, some progress (such as Adventurer Level) may be adjusted in future updates.\n":
-                                size 30
-
-                            text "Thanks for your understanding… and have fun!" :
-                                size 30
 
 
- 
+
 
     fixed:
         pos (1600, 540)
-        imagebutton at dyn_hover_effect, dyn_delayed_zoomout_alpha(worldmapZoomIcons*0.4, worldmapZoomIcons*0.4):
+        imagebutton at dyn_hover_effect, dyn_delayed_zoomout_alpha(worldmap.icon_zoom*0.4, worldmap.icon_zoom*0.4):
             idle f"gui/icons/sigils/{dungeoninfo['icon']}"
             xanchor 0.5
             yanchor 0.5
@@ -1090,19 +837,19 @@ screen s_dungeon_info:
             outlines [ ( 3, "#131720", 1, 1) ]
 
 
-label reopen_wm_info: 
-    $ glideto_worldmap(2.0, LOCATIONS_WORLDMAP[selectedLocation]["x"], LOCATIONS_WORLDMAP[selectedLocation]["y"], 640) 
-    $ wmInfoShowing = True
-    $ wmStateBackup = save_worldmap_state()
-    $ worldmapCountries, worldmapRegions, worldmapPaths, worldmapTowns = False, False, False, False
+label reopen_wm_info:
+    $ worldmap.glide_to(2.0, LOCATIONS_WORLDMAP[selectedLocation]["x"], LOCATIONS_WORLDMAP[selectedLocation]["y"], 640)
+    $ worldmap.info_showing = True
+    $ worldmap.info_state_backup = worldmap.capture_state()
+    $ worldmap.set_all_overlays(False)
     hide screen s_wm_info
     show screen s_wm_info(selectedLocation)
     ""
 
 label close_wm_info:
     hide screen s_wm_info
-    $ restore_worldmap_state(wmStateBackup)
-    $ wmInfoShowing = False
+    $ worldmap.restore_state(worldmap.info_state_backup)
+    $ worldmap.info_showing = False
     ""
 
 define nationTintDict = {
@@ -1120,7 +867,7 @@ screen s_wm_info(location = "solsticeridge"):
     fixed at popin_bounce, fadein:
         align (0.5, 0.5)
 
-        add "gui/maps/general/worldmap_infoscreen_bg.png" at colortransform(tint=nationTintDict[LOCATIONS_WORLDMAP[location]["partof"]]) #colortransform(tint = "#ffd051")
+        add "gui/maps/general/worldmap_infoscreen_bg.png" at colortransform(tint=nationTintDict[LOCATIONS_WORLDMAP[location]["partof"]])
         add "gui/maps/general/worldmap_infoscreen_bg_ornaments.png"
 
         fixed:
@@ -1129,7 +876,6 @@ screen s_wm_info(location = "solsticeridge"):
             fixed:
                 pos (920, 90)
                 xysize (360, 280)
-                #background Solid("#533e177e")
                 vbox:
                     text "Part of:" style "textmaplabel":
                             size 18
@@ -1147,10 +893,9 @@ screen s_wm_info(location = "solsticeridge"):
                             text_align 0.5
                             outlines [ ( 2, "#131720", 1, 1) ]
 
-                
+
 
             vbox:
-                #xysize (1280, 960)
                 xpos 20
                 fixed:
                     xysize (1280, 90)
@@ -1158,21 +903,20 @@ screen s_wm_info(location = "solsticeridge"):
                         size 55
                         align (0.5, 0.5)
                         outlines [ ( 3, "#131720", 1, 1) ]
-                fixed: 
+                fixed:
                     xysize (1280, 30)
-                fixed: 
+                fixed:
                     xysize (1280, 60)
                     text "Overview" style "textmaplabel":
                         size 40
                         yalign 0.5
                         outlines [ ( 2, "#131720", 1, 1) ]
-                fixed: 
+                fixed:
                     xysize (1280, 10)
 
-                fixed: 
+                fixed:
                     xysize (830, 190)
                     xpos 30
-                    #p1
                     text LOCATIONS_WORLDMAP[location]["description"].split("\n\n")[0] style "textmaptext":
                         size 22
                         yalign 0.0
@@ -1180,10 +924,9 @@ screen s_wm_info(location = "solsticeridge"):
                         outlines [ ( 2, "#131720", 0, 0) ]
                         color "#ffe797"
 
-                fixed: 
+                fixed:
                     xysize (1180, 180)
                     xpos 30
-                    #p1
                     text LOCATIONS_WORLDMAP[location]["description"].split("\n\n")[1].strip() style "textmaptext":
                         size 22
                         yalign 0.0
@@ -1191,18 +934,17 @@ screen s_wm_info(location = "solsticeridge"):
                         outlines [ ( 2, "#131720", 0, 0) ]
                         color "#ffe797"
 
-                fixed: 
+                fixed:
                     xysize (1280, 60)
                     text "Significance" style "textmaplabel":
                         size 40
                         yalign 0.5
                         outlines [ ( 2, "#131720", 1, 1) ]
-                fixed: 
+                fixed:
                     xysize (1280, 5)
-                fixed: 
+                fixed:
                     xysize (830, 140)
                     xpos 30
-                    #p1
                     vbox:
                         for entry in LOCATIONS_WORLDMAP[location]["significance"]:
                             hbox:
@@ -1217,19 +959,18 @@ screen s_wm_info(location = "solsticeridge"):
                                     xalign 0.0
                                     outlines [ ( 2, "#131720", 0, 0) ]
                                     color "#ffe797"
-                    
-                fixed: 
+
+                fixed:
                     xysize (1280, 60)
                     text "Major Landmarks" style "textmaplabel":
                         size 40
                         yalign 0.5
                         outlines [ ( 2, "#131720", 1, 1) ]
-                fixed: 
+                fixed:
                     xysize (1280, 5)
-                fixed: 
+                fixed:
                     xysize (830, 140)
                     xpos 30
-                    #p1
                     vbox:
                         for entry in LOCATIONS_WORLDMAP[location]["landmarks"]:
                             hbox:
@@ -1245,16 +986,13 @@ screen s_wm_info(location = "solsticeridge"):
                                     outlines [ ( 2, "#131720", 0, 0) ]
                                     color "#ffe797"
 
-        
 
-        #imagebutton at dyn_hover_effect:
-        #    idle "gui/icons/return_icon.png"
-        #    action [Jump("close_wm_info")]
-    
+
+
 
     fixed:
         pos (1600, 540)
-        imagebutton at dyn_hover_effect, dyn_delayed_zoomout_alpha(worldmapZoomIcons*0.4, worldmapZoomIcons*0.4):#dyn_zoom(worldmapZoomIcons):#, dyn_delayed_zoomout_alpha(worldmapZoomIcons, worldmapZoomIcons*2.0), :
+        imagebutton at dyn_hover_effect, dyn_delayed_zoomout_alpha(worldmap.icon_zoom*0.4, worldmap.icon_zoom*0.4):
             idle f"gui/icons/sigils/{LOCATIONS_WORLDMAP[location]['icon']}"
             xanchor 0.5
             yanchor 0.5

@@ -1,21 +1,5 @@
 """
-Character Location System
-=========================
-
-Provides helper functions for determining where characters are
-located throughout the game world.
-
-Character schedules are evaluated dynamically using the current
-chapter and time of day, allowing NPCs to appear in different
-locations as the story progresses.
-
-Collaborates with
------------------
-
-• Characters
-• Navigation
-• World Map
-• Dialogue
+Character schedule lookups used by navigation and UI.
 """
 
 init +1 python:    
@@ -35,9 +19,9 @@ init +1 python:
         return index
 
     def get_char_location(cid, _tod = None, chapter = None):
-        if _tod == None:
+        if _tod is None:
             _tod = tod
-        if chapter == None:
+        if chapter is None:
             chapter = currentChapter
 
         for rule in CHAR_SCHEDULES.get(cid, []):
@@ -54,9 +38,9 @@ init +1 python:
         if cid == "zero":
             return LOCATION_NAMES.get(f"{superLocation}_{navLocation}")
 
-        if _tod == None:
+        if _tod is None:
             _tod = tod
-        if chapter == None:
+        if chapter is None:
             chapter = currentChapter
 
         for rule in CHAR_SCHEDULES.get(cid, []):
@@ -72,12 +56,12 @@ init +1 python:
     def get_chars_at(location = None, _tod = None, chapter = None):
         if location is None:
             location = f"{superLocation}_{navLocation}"
-        if _tod == None:
+        if _tod is None:
             _tod = tod
-        if chapter == None:
+        if chapter is None:
             chapter = currentChapter
         
-        #Normalize input to list
+        # Normalize a single location to the same path as multiple-location lookups.
         if isinstance(location, str):
             locations = [location]
         else:
@@ -99,7 +83,7 @@ init +1 python:
         global CHAR_LOCATION_INDEX
         CHAR_LOCATION_INDEX = build_location_index()
 
-#################################### Data Stores - IMPORTANT: If a reference exists in these stores, then there HAS to be a corresponding image and label to navigate to.
+# Character schedule data.
 default CHAR_LOCATION_INDEX = {}
 
 define CHAR_SCHEDULES = {
@@ -201,15 +185,8 @@ define CHAR_SCHEDULES = {
             "chapter": {"1.1"},
         },
     ],
-
-    ########################## Side Chars #####################################
+    # Side characters
     "ella": [
-        #TODO: 
-        #{
-        #    "location": "sr_cafeoutdoor",
-        #    "tod": {1},
-        #    "chapter": {"1.1"},
-        #},
         {
             "location": "sr_cafeindoor",
             "tod": {1, 2, 3},

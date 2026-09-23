@@ -1,20 +1,5 @@
 """
-Location Event System
-=====================
-
-Evaluates location-specific gameplay events when the player enters
-or interacts with a location.
-
-Events can depend on factors such as:
-
-• Story progression
-• Time of day
-• Character state
-• Progression flags
-• Special conditions
-
-This allows locations to react dynamically to the current game
-state without embedding progression logic directly into navigation.
+Location entry and exit checks based on current game state.
 """
 
 init python:
@@ -39,14 +24,14 @@ init python:
 
         for rule in rules:
 
-            # TOD check
+            # Time-of-day restriction.
             if _tod not in rule.get("tod", {_tod}):
                 continue
 
-            trigger = rule.get("trigger", set()) #using tuples, sue me! trigger[0] holds the flags, trigger[1] holds the flags_container and trigger[2] holds the flags_identifier(unless STORY)
+            trigger = rule.get("trigger", set())
             bypass = rule.get("bypass", set())
 
-            # trigger flags
+            # Required flags.
             if trigger and trigger[1] == STORY:
                 if not flags.story.has_any("", trigger[0]):
                     continue
@@ -54,7 +39,7 @@ init python:
             elif trigger and not flags.get(trigger[1]).has_any(trigger[2], trigger[0]):
                 continue
 
-            # bypass flags
+            # Bypass flags.
             if bypass and bypass[1] == STORY:
                 if flags.story.has_any("", bypass[0]):
                     continue
@@ -80,24 +65,22 @@ init python:
             return None
 
         for rule in rules:
-            # TOD check
+            # Time-of-day restriction.
             if _tod not in rule.get("tod", {_tod}):
                 continue
 
-            trigger = rule.get("trigger", set()) #using tuples, sue me! trigger[0] holds the flags, trigger[1] holds the flags_container and trigger[2] holds the flags_identifier(unless STORY)
+            trigger = rule.get("trigger", set())
             bypass = rule.get("bypass", set())
 
-            # trigger flags
+            # Required flags.
             if trigger and trigger[1] == STORY:
-                renpy.log(f"triggered potential Story catch: {trigger[0]}")
                 if not flags.story.has_any("", trigger[0]):
-                    renpy.log(f"not triggering: {trigger[0]}")
                     continue
 
             elif trigger and not flags.get(trigger[1]).has_any(trigger[2], trigger[0]):
                 continue
 
-            # bypass flags
+            # Bypass flags.
             if bypass and bypass[1] == STORY:
                 if flags.story.has_any("", bypass[0]):
                     continue
@@ -115,9 +98,9 @@ init python:
 
 
 
-    #Special Catches when trying to ENTER locations, triggered if "flags" in flagsSuper, ignored if "bypass" in flagsSuper
+    # Rules checked before entering a location.
     LOCATION_CATCHES = {
-        #HOME
+        # Home
         "home_kitchen1": [
             {
                 "bypass": ({"visited_mcroom",}, STORY),
@@ -129,14 +112,15 @@ init python:
             },
 
         ],
+        # TODO: Event redirects should eventually live outside location catches.
         "home_livingroom1": [
-            {#TODO: catches should not trigger events, only block stuff... move and change this to charactersData later
+            {
                 "bypass": ({"main1_3",}, STORY),
                 "target": "prologue_final_1",
             },
         ],
         "home_livingroom2": [
-            {#TODO: catches should not trigger events, only block stuff... move and change this to charactersData later
+            {
                 "bypass": ({"main1_3",}, STORY),
                 "target": "prologue_final_1",
             },
@@ -162,7 +146,7 @@ init python:
                 "bypass": ({"visited_mcroom",}, STORY),
                 "target": "visit_mcroom",
             },
-            {#TODO: catches should not trigger events, only block stuff... move and change this to charactersData later
+            {
                 "bypass": ({"visited_novaroom",}, STORY),
                 "target": "prologue_talknova_1",
             },
@@ -182,7 +166,7 @@ init python:
         ],
 
 
-        ############################# SOLSTICE RIDGE ###################################
+        # Solstice Ridge
 
         "sr_cafeindoor": [
             {
@@ -238,7 +222,7 @@ init python:
             },
         ],
 
-        #Special Catches
+        # Special cases
         "sleep": [
             {
                 "bypass": ({"main2_2",}, STORY),
@@ -247,7 +231,7 @@ init python:
         ],
     }
 
-    #Special Catches when trying to LEAVE super locations, triggered if "flags" in flagsSuper, ignored if "bypass" in flagsSuper
+    # Rules checked before leaving a region.
     SUPERLOCATION_BLOCKS = {
         "home": [
             {
@@ -268,7 +252,7 @@ init python:
         ],
     }
 
-############################### CATCH LABELS ###############################
+# Catch labels
 label cafe_closed:
     think "...The Sweet Tooth Café is closed..."
     think"...Guess I'll return tomorrow..."
@@ -304,7 +288,6 @@ label wrong_place:
 label dungeon_late:
     think "...It's probably a little late to journey to a dungeon..."
     ""
-###################
 
 label first_day_guild:
     think "I can't leave yet, we need to go to the {b}Adventurers Guild{/b}!"
@@ -323,7 +306,6 @@ label visit_novaroom:
     jump current_location
 
 label visiting_mcroom:
-    #$ renpy.log("hit label visiting mcroom")
     $ set_current_location("home", "mcroom")
     call current_location_bgonly from _call_current_location_bgonly
     call close_all_screens from _call_close_all_screens

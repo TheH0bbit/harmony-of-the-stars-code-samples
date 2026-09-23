@@ -1,52 +1,18 @@
 """
-Character System
-================
+Character registration, persistent state and progression helpers.
 
-Defines the core character framework used throughout Harmony of the Stars.
-
-Responsibilities
-----------------
-
-• Character registration
-• Runtime character state
-• Character progression
-• Party management
-• Equipment integration
-• Relationship tracking
-• Stat calculation
-• Gameplay helper functions
-
-Architecture
-------------
-
-Character definitions are registered globally and shared across the
-project, while runtime character state is stored separately. This
-allows gameplay systems to reference characters consistently while
-keeping mutable progression isolated from static character data.
-
-The character system acts as the central point of interaction for
-many gameplay systems.
-
-Collaborates with
------------------
-
-• Combat
-• Inventory
-• Equipment
-• Skills
-• Stats
-• Quests
-• Save System
-• Dialogue
+Static character definitions are kept separate from save-backed CharacterState
+objects. Combat, equipment, skill and flag systems are defined elsewhere in the
+project.
 """
 
 default char_states = {}
 
 init python:
-    #STATIC DICT OF ALL CHARS, BUILT FROM DATA
+    # Runtime lookup of registered character wrappers.
     ALLCHARS = {}
 
-    #FIXED ORDER OF CHARACTERS
+    # Stable order used by character selection UI.
     MAINCHAR_ORDER = [
         "zero",
         "nova",
@@ -56,7 +22,6 @@ init python:
         "ceecee",
         "anai",
     ]
-    #Actual references
     MAINCHARS = []
 
     def register_char(char):
@@ -72,20 +37,15 @@ init python:
     def get_char_by_id(cid):
         return ALLCHARS.get(cid)
 
-    #Get Char Function
     def gc(cid):
         return ALLCHARS.get(cid)
 
-    ##########################################
-    #reloaded after every load and at start of game, enables the characters to be put into static containers for lookup
-    #NOTE: does not recreate saved character data, saved data is taken from char_states!
+    # Rebuild wrappers after startup/load without replacing saved CharacterState data.
     def reload_chars():
-        #should never actually clear an entry, but is here to stop the game from fully crashing if ever called, if get called at runtime weird bugs may happen
-        #Don't judge me, i like my globals for debugging and code assignments
         global selChar, zero, nova, yuki, alita, solaria, ceecee, anai, ella, nessa, aria, ezra, cyrus, lucan, solsticeridge
         ALLCHARS.clear()
 
-        #main
+        # Main cast
         zero = Chara("zero")
         nova = Chara("nova")
         yuki = Chara("yuki")
@@ -94,7 +54,7 @@ init python:
         ceecee = Chara("ceecee")
         anai = Chara("anai")
 
-        #side
+        # Side characters
         ella = Chara("ella")
         nessa = Chara("nessa")
         aria = Chara("aria")
@@ -102,7 +62,7 @@ init python:
         cyrus = Chara("cyrus")
         lucan = Chara("lucan")
 
-        #locations (masked as characters for eventlogic purposes)
+        # Location proxy used by the event system.
         solsticeridge = Chara("solsticeridge")
 
         for cid in ALLCHARS:
@@ -114,7 +74,7 @@ init python:
         rebuild_mainchars()
 
     def get_next_mainchar(current=None):
-        if current == None:
+        if current is None:
             current = selChar.cid
         if not MAINCHARS or current not in MAINCHARS:
             return None
@@ -123,14 +83,13 @@ init python:
         return MAINCHARS[(idx + 1) % len(MAINCHARS)] 
 
     def get_prev_mainchar(current=None):
-        if current == None:
+        if current is None:
             current = selChar.cid
         if not MAINCHARS or current not in MAINCHARS:
             return None
         idx = MAINCHARS.index(current)
         return MAINCHARS[(idx - 1) % len(MAINCHARS)]
 
-    #Use these to create STATIC character definitions, saved in charactersData
     class CharacterDef:
         def __init__(self, cid, name, lastname, color, height, species, type):
             self.cid = cid
@@ -150,15 +109,15 @@ init python:
             self.combat_unlocked = combat_unlocked
             self.descr = descr
 
-            #VN stats and counters
+            # Narrative progression
             self.age = age
             self.affection = 0
             self.clevel = 0
             self.counters = {}
 
-            #RPG stats & combattraits
+            # RPG progression
             self.charclassID = charclassID
-            self.level = 1
+            self.level = level
             self.exp = 0
             self.totalexp = 0
             self.wpnCategory = wpnCategory
@@ -166,17 +125,17 @@ init python:
             self.baseMaxStats = 0
             self.skillpoints = 0
             self.unlockedSkillnodes = set()
-            self.unlockedOther = set() #??
+            self.unlockedOther = set()
             self.permaStatIncreases = Stats()
             self.skillStatIncreases = Stats()
 
-            #equipment
+            # Equipment
             self.weapons = [weaponID, "wpnnone"]
             self.clothes = clothesID
             self.accs = [accID, "accnone", "accnone"]
             self.loot = loot
 
-            #abilities
+            # Abilities
             self.damageAbilities = []
             self.supportAbilities = []
             self.controlAbilities = []
@@ -203,7 +162,7 @@ init python:
             char_states[cid] = cstate
         return char_states[cid]
 
-    #Updates Characters to new save versions
+    # Hook for future save-state migrations.
     def migrate_character(cstate):
         if not hasattr(cstate, "__version__"):
             cstate.__version__ = 1
@@ -228,13 +187,9 @@ init python:
             register_char(self)
 
         def reapply_skills(self):
-            #Empty Data
             self.state.skillStatIncreases.reset()
 
-            #IMPORTANT!:
-            #REGARDING ABILITIES GAINED THROUGH STORY PROGRESSION!
-            #CREATE FAKE SKILLNODES(NOT IN SKILLTREE) AND JUST ADD THEM TO THE CHARACTER UNLOCKED NODES!
-            #CARE FOR EVER RESETTING UNLOCKED SKILLNODES, i. e. REASSIGNING SKILLTREE
+            # Rebuild derived skill data from the persistent set of unlocked nodes.
 
             self.state.damageAbilities = []
             self.state.supportAbilities = []
@@ -280,7 +235,7 @@ init python:
         def add_skillpoints(self, amount=1):
             self.state.skillpoints += amount
        
-        ################ Static Variables ################
+        # Static character data
         @property
         def name(self):
             if self.cid == "zero":
@@ -307,7 +262,7 @@ init python:
         def type(self):
             return CHAR_DEFS[self.cid].type
 
-        ################ Dynamic Variables ################
+        # Persistent character data
         @property
         def inspect(self):
             return CHAR_DEFS[self.cid].name + " \n" + self.state.descr
@@ -330,16 +285,16 @@ init python:
 
         
         @property
-        def get_flags(self): #works, but instead just use flag manager directly instead!
+        def get_flags(self):
             return flags.char.get(self.cid)
 
-        def has_flag(self, flag): #works, but instead just use flag manager directly instead!
+        def has_flag(self, flag):
             return flags.char.has(self.cid, flag)
         
-        def set_flag(self, flag): #works, but instead just use flag manager directly instead!
+        def set_flag(self, flag):
             flags.char.set(self.cid, flag)
 
-        def clear_flag(self, flag): #works, but instead just use flag manager directly instead!
+        def clear_flag(self, flag):
             flags.char.remove(self.cid, flag)
         
         def inc_counter(self, key, amount=1):
@@ -380,7 +335,6 @@ init python:
             if not isinstance(item, str):
                 itemID = item.itemID
 
-            #truly marvelous design by me
             if self.state.clothes == itemID:
                 result += 1
             if self.state.weapons[0] == itemID:
@@ -399,7 +353,7 @@ init python:
 
         def equip_hands(self, item, slot = 0):
             if(isinstance(item, Weapon) and check_wpncategory(self.state.wpnCategory, item)):
-                if item.wpnCategory >= 10: #Twohanded
+                if item.wpnCategory >= 10:  # Two-handed weapon
                     self.unequip_item(WPN, 0)
                     self.unequip_item(WPN, 1)
                     self.state.weapons[0] = item.itemID
@@ -435,11 +389,11 @@ init python:
         def update_stats(self):
             self.state.baseMaxStats = get_charclass_by_id(self.state.charclassID).get_stats(self.state.level)
 
-        #COMBAT XP
+        # Combat progression
         def gain_exp(self, exp):
             self.state.totalexp += exp
             self.state.exp += exp
-            while self.state.exp >= 90 + self.state.level * self.state.level * 10: #TODO better exp threshholds
+            while self.state.exp >= 90 + self.state.level * self.state.level * 10:
                 self.state.exp -= (90 + self.state.level * self.state.level * 10)
                 self.level_up()
                 
@@ -456,7 +410,7 @@ init python:
             add_popup_levelup(self.cid, self.state.level, "Adventurer")
 
 
-        #CLEVEL AFFECTION
+        # Relationship progression
         def gain_affection(self, points):
             add_popup_affection(self.cid)
             self.state.affection += points
@@ -698,7 +652,7 @@ init python:
             self.state.charclassID = charclassID
 
         def set_affinities(self, affinities):
-            #You never set affinities here, you change the character class/definition
+            # Affinities are defined by the active character class.
             return
 
         def set_weapon_slot1(self, weapon):
@@ -724,33 +678,3 @@ init python:
 
         def set_wpn_category(self, categories):
             self.state.wpnCategory = categories
-        
-
-# Example for updated CharacterState verions in future releases
-
-#EXAMPLE init python:
-#EXAMPLE     class CharacterState:
-#EXAMPLE         __version__ = 2
-#EXAMPLE 
-#EXAMPLE         def __init__(self, cid):
-#EXAMPLE             self.cid = cid
-#EXAMPLE             self.hp = 0
-#EXAMPLE             self.affection = 0
-#EXAMPLE             self.flags = set()
-#EXAMPLE             self.relationship = "neutral"  # NEW FIELD
-#EXAMPLE 
-
-#EXAMPLE init python:
-#EXAMPLE     #Updates Characters to new save versions
-#EXAMPLE     def migrate_character(cstate):
-#EXAMPLE         if not hasattr(cstate, "__version__"):
-#EXAMPLE             cstate.__version__ = 1
-#EXAMPLE 
-#EXAMPLE         if cstate.__version__ < 2:
-#EXAMPLE             cstate.relationship = "neutral"
-#EXAMPLE             cstate.__version__ = 2
-#EXAMPLE 
-#EXAMPLE label usage:
-#EXAMPLE     python:
-#EXAMPLE         alice = Character("alice")
-#EXAMPLE         alice.state.affection += 1

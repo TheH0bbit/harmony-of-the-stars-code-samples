@@ -1,13 +1,5 @@
 """
-Status Effect Definitions
-=========================
-
-Defines the StatusEffect data model together with the global
-status effect registry used by the combat system.
-
-Status effects describe temporary combat modifiers such as buffs,
-debuffs and other persistent effects that can be applied to
-combatants during battle.
+Status-effect definitions used by the combat system.
 """
 
 init python:

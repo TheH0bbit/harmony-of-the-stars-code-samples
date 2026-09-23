@@ -1,13 +1,5 @@
 """
-Location Definitions
-====================
-
-Contains shared location metadata used throughout the project.
-
-Locations are grouped into logical collections representing
-regions, buildings and gameplay areas. These groupings simplify
-navigation, progression checks and gameplay queries elsewhere
-in the project.
+Location metadata and audio lookup tables used by navigation.
 """
 
 init python:
@@ -23,7 +15,7 @@ init python:
     LOCATIONS_SROUTER_RIDGE = {"ridgepath1", "ridgepath2", "ridgeshrinefront", "ridgeshrinemiddle", "ridgeshrineviewwest", "ridgeshrinevieweast", "ridgeshrineviewnorth"}
 
 
-    #Lookup of audio at location
+    # Resolve the audio set for a location and time of day.
     def get_location_audio(superloc, loc, _tod):
         music_rules = LOCATION_MUSIC.get(superloc, [])
         ambience_rules = LOCATION_AMBIENCE.get(superloc, [])
@@ -34,7 +26,7 @@ init python:
 
         result = []
 
-        #TODO: Same Routine 3 Times, modularize in Future!
+        # Music, ambience and SFX use the same rule shape.
         for rule in music_rules:
             if rule.get("default"):
                 music = rule.get("music")
@@ -73,7 +65,7 @@ init python:
 
         footsteps = get_footsteps(superloc, loc)
 
-        #1st slot music, 2nd ambience, 3rd footsteps, 4th other sfx
+        # Slots: music, ambience, footsteps, other SFX.
         result.append(music)
         result.append(ambience)
         result.append(footsteps)
@@ -114,15 +106,10 @@ init python:
             global tempstring
             tempstring = _location
             play_footsteps(audio[2], "1", delay = 0.35, shuffle = True, channeloffset = 10, volume = 0.25)
-
-        #if audio[3]:
-        #    for i, entry in enumerate(audio[3]):
-        #        sfx, volume = entry
-        #        play_sfx(sfx, volume=volume, channel = i)
     
         return
 
-    #Better lookuptable for Footsteps(original for easier authoring, this one for lookup), Run once during startup
+    # Build the footstep lookup table once during startup.
     FOOTSTEPS_LOOKUP = {}
 
     def build_footstep_lookup():
@@ -143,15 +130,10 @@ init python:
             FOOTSTEP_DEFAULT.get(superloc)
         )
 
-    ############################ MUSIC ################################
+    # Music
     LOCATION_MUSIC = {
-        #HOME
+        # Home
         "home": [
-            #{
-            #    "locations": LOCATIONS_HOME_OUTSIDE,
-            #    "music": ("home", 0.5),
-            #},
-
             {
                 "locations": {"hotspringgarden", "hotspringmain",},
                 "music": ("onsen", 1),
@@ -207,7 +189,7 @@ init python:
 
     }
 
-    ############################ AMBIENCE ################################
+    # Ambience
     LOCATION_AMBIENCE = {
         #HOME
         "home": [
@@ -268,9 +250,9 @@ init python:
 
     }
 
-    ############################ OTHER SFX(NOT FOOTSTEPS, DEFAULT = NOTHING) ################################
+    # Other location SFX
     LOCATION_SFX = {
-        #STILL USABLE, BUT ENTERING/LEAVING SOUNDS ARE NOW PART OF INTERACTABLES, TO MAKE WORK AGAIN UPDATE VALUES AND UNCOMMENT PLAY FUNCTINO ABOVE
+        # Entry and exit sounds are currently handled by interactables.
         "home": [
 
             {
@@ -290,7 +272,7 @@ init python:
         ]
     }
 
-    ############################ FOOTSTEPS + DEFAULT TABLE ################################
+    # Footsteps and defaults
     FOOTSTEP_DEFAULT = {
         "home": "soft",
         "sr": "stone",
@@ -300,7 +282,7 @@ init python:
     FOOTSTEPS = {
 
         "home": {
-            #Homedefault is soft
+            # Home defaults to soft footsteps.
             "sand": {"hub", "hubleft", "hubright", "stonefigures", "entranceisle2", "entranceisle1"},
 
             "wood": {"terraceright", "corridorright", "connectorright", "terraceleft", "corridorleft", "connectorleft", "hotspringmain", "hotspringgarden", "dojo", "study", "kitchen1", "kitchen2", "novaroom", "stonegarden1", "stonegarden2",},
@@ -393,7 +375,7 @@ init python:
         "sr_parkrunestone": "Dawnview Park - Runestone",
         "sr_parkpicnicarea": "Dawnview Park - Picnic Area",
 
-        # SROUTER
+        # Solstice Ridge outskirts
         "srouter_lakeentrance": "Lake Entrance",
         "srouter_lakemain": "Lake",
         "srouter_lakeback": "Lake Back Area",

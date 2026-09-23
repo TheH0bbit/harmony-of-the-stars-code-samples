@@ -1,35 +1,5 @@
 """
-Skill Tree System
-=================
-
-Implements character-specific progression trees.
-
-Responsibilities
-----------------
-
-• Skill tree definitions
-• Skill node registration
-• Unlock progression
-• Dependency validation
-• Character-specific progression paths
-
-Architecture
-------------
-
-Skill trees are defined independently of runtime character state.
-
-Each character owns a dedicated progression tree composed of
-individual skill nodes. Unlocking nodes grants new gameplay
-capabilities while allowing progression logic to remain separate
-from combat behaviour and character statistics.
-
-Collaborates with
------------------
-
-• Characters
-• Stats
-• Abilities
-• Combat
+Character skill-tree definitions and unlock helpers.
 """
 
 init python:
